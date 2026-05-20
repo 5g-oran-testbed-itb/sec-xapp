@@ -316,16 +316,17 @@ def _build_eval_json(labels, rule_sev, lstm_sev, final_sev, y_true, csv_path):
         }
 
     def attack_metrics(lbl, pred_sev):
-        mask = labels == lbl
-        if mask.sum() == 0:
+        # Include normal rows so FP from the detector on benign traffic is counted
+        mask = (labels == lbl) | (labels == 0)
+        if (labels[mask] == lbl).sum() == 0:
             return None
-        y_t = (labels[mask] != 0).astype(int)
+        y_t = (labels[mask] == lbl).astype(int)
         y_p = (pred_sev[mask] >= 1).astype(int)
         return {
-            "recall":     float(recall_score(y_t, y_p, zero_division=0)),
-            "precision":  float(precision_score(y_t, y_p, zero_division=0)),
-            "f1":         float(f1_score(y_t, y_p, zero_division=0)),
-            "count":      int(mask.sum()),
+            "recall":    float(recall_score(y_t, y_p, zero_division=0)),
+            "precision": float(precision_score(y_t, y_p, zero_division=0)),
+            "f1":        float(f1_score(y_t, y_p, zero_division=0)),
+            "count":     int((labels[mask] == lbl).sum()),
         }
 
     per_stage = {
