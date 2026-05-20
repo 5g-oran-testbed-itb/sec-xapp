@@ -1,0 +1,184 @@
+<h2>Main Page — Layout Options</h2>
+<p class="subtitle">Pilih layout untuk halaman utama (real-time KPM metrics + detection status)</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="A" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1a1a2e;padding:10px;border-radius:6px;font-size:11px;color:#eee;font-family:monospace">
+        <!-- Status Bar -->
+        <div style="background:#0d3b1e;border:1px solid #2ecc71;border-radius:4px;padding:6px 10px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+          <span style="color:#2ecc71;font-weight:bold">● NORMAL</span>
+          <span style="color:#aaa">Stage 1: OK &nbsp;|&nbsp; Stage 2: OK &nbsp;|&nbsp; Threat: None</span>
+          <span style="color:#aaa">Last: 0.5s ago</span>
+        </div>
+        <!-- Stat row -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px">
+          <div style="background:#16213e;border-radius:4px;padding:6px;text-align:center">
+            <div style="color:#e94560;font-size:16px;font-weight:bold">12%</div>
+            <div style="color:#888;font-size:9px">PRB DL</div>
+          </div>
+          <div style="background:#16213e;border-radius:4px;padding:6px;text-align:center">
+            <div style="color:#0f3460;font-size:16px;font-weight:bold;color:#3498db">8%</div>
+            <div style="color:#888;font-size:9px">PRB UL</div>
+          </div>
+          <div style="background:#16213e;border-radius:4px;padding:6px;text-align:center">
+            <div style="color:#f39c12;font-size:16px;font-weight:bold">15</div>
+            <div style="color:#888;font-size:9px">CQI</div>
+          </div>
+          <div style="background:#16213e;border-radius:4px;padding:6px;text-align:center">
+            <div style="color:#9b59b6;font-size:16px;font-weight:bold">2ms</div>
+            <div style="color:#888;font-size:9px">UL Delay</div>
+          </div>
+        </div>
+        <!-- 2 graphs -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <div style="background:#16213e;border-radius:4px;padding:6px;height:50px">
+            <div style="color:#888;font-size:9px;margin-bottom:3px">PRB DL/UL — 5 min</div>
+            <div style="height:30px;background:linear-gradient(90deg,#1a1a2e,#1a1a2e);position:relative;overflow:hidden">
+              <div style="position:absolute;bottom:0;left:0;right:0;height:40%;background:linear-gradient(180deg,#e9456088,#e9456044);border-top:1px solid #e94560"></div>
+              <div style="position:absolute;bottom:0;left:0;right:0;height:20%;background:linear-gradient(180deg,#3498db88,#3498db44);border-top:1px solid #3498db"></div>
+            </div>
+          </div>
+          <div style="background:#16213e;border-radius:4px;padding:6px;height:50px">
+            <div style="color:#888;font-size:9px;margin-bottom:3px">LSTM Anomaly Score</div>
+            <div style="height:30px;background:linear-gradient(90deg,#1a1a2e,#1a1a2e);position:relative;overflow:hidden">
+              <div style="position:absolute;bottom:0;left:0;right:0;height:15%;background:linear-gradient(180deg,#2ecc7188,#2ecc7144);border-top:1px solid #2ecc71"></div>
+            </div>
+          </div>
+        </div>
+        <!-- bottom full-width -->
+        <div style="background:#16213e;border-radius:4px;padding:6px;margin-top:6px;height:40px">
+          <div style="color:#888;font-size:9px;margin-bottom:3px">Detection Events Timeline</div>
+          <div style="height:20px;background:#1a1a2e;border-radius:2px;position:relative">
+            <div style="position:absolute;left:30%;top:2px;bottom:2px;width:2px;background:#f39c12;border-radius:1px"></div>
+            <div style="position:absolute;left:65%;top:2px;bottom:2px;width:2px;background:#e74c3c;border-radius:1px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Status Bar + Stats + Charts</h3>
+      <p>Alert banner di atas, 4 stat panel, 2 time-series grafik, dan event timeline di bawah. Focus: threat status langsung terlihat.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="B" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1a1a2e;padding:10px;border-radius:6px;font-size:11px;color:#eee;font-family:monospace">
+        <!-- 2-column layout -->
+        <div style="display:grid;grid-template-columns:1fr 2fr;gap:8px">
+          <!-- Left sidebar: stats -->
+          <div>
+            <div style="background:#16213e;border-radius:4px;padding:6px;margin-bottom:6px;text-align:center">
+              <div style="color:#2ecc71;font-size:18px;font-weight:bold">NORMAL</div>
+              <div style="color:#888;font-size:8px">Detection Stage</div>
+            </div>
+            <div style="background:#16213e;border-radius:4px;padding:5px;margin-bottom:4px;text-align:center">
+              <div style="color:#e94560;font-size:14px;font-weight:bold">12%</div>
+              <div style="color:#888;font-size:8px">PRB DL</div>
+            </div>
+            <div style="background:#16213e;border-radius:4px;padding:5px;margin-bottom:4px;text-align:center">
+              <div style="color:#3498db;font-size:14px;font-weight:bold">8%</div>
+              <div style="color:#888;font-size:8px">PRB UL</div>
+            </div>
+            <div style="background:#16213e;border-radius:4px;padding:5px;margin-bottom:4px;text-align:center">
+              <div style="color:#f39c12;font-size:14px;font-weight:bold">15</div>
+              <div style="color:#888;font-size:8px">CQI</div>
+            </div>
+            <div style="background:#16213e;border-radius:4px;padding:5px;text-align:center">
+              <div style="color:#9b59b6;font-size:14px;font-weight:bold">2ms</div>
+              <div style="color:#888;font-size:8px">UL Delay</div>
+            </div>
+          </div>
+          <!-- Right: graphs stacked -->
+          <div>
+            <div style="background:#16213e;border-radius:4px;padding:6px;margin-bottom:6px;height:55px">
+              <div style="color:#888;font-size:9px;margin-bottom:3px">PRB DL / UL Ratio</div>
+              <div style="height:35px;background:#1a1a2e;border-radius:2px;position:relative;overflow:hidden">
+                <div style="position:absolute;bottom:0;left:0;right:0;height:35%;background:linear-gradient(180deg,#e9456066,#e9456022);border-top:1px solid #e94560"></div>
+                <div style="position:absolute;bottom:0;left:0;right:0;height:18%;background:linear-gradient(180deg,#3498db66,#3498db22);border-top:1px solid #3498db"></div>
+              </div>
+            </div>
+            <div style="background:#16213e;border-radius:4px;padding:6px;margin-bottom:6px;height:50px">
+              <div style="color:#888;font-size:9px;margin-bottom:3px">CQI + RACH Preamble</div>
+              <div style="height:30px;background:#1a1a2e;border-radius:2px;position:relative;overflow:hidden">
+                <div style="position:absolute;top:3px;left:0;right:0;height:3px;background:#f39c1299;border-radius:1px"></div>
+              </div>
+            </div>
+            <div style="background:#16213e;border-radius:4px;padding:6px;height:45px">
+              <div style="color:#888;font-size:9px;margin-bottom:3px">LSTM Score + Threshold</div>
+              <div style="height:25px;background:#1a1a2e;border-radius:2px;position:relative;overflow:hidden">
+                <div style="position:absolute;top:40%;left:0;right:0;height:1px;background:#e74c3c99"></div>
+                <div style="position:absolute;bottom:0;left:0;right:0;height:10%;background:#2ecc7166;border-top:1px solid #2ecc71"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Sidebar Stats + Stacked Charts</h3>
+      <p>Kolom kiri: stat panel (status + metrics terkini). Kolom kanan: 3 time-series grafik bertumpuk. Cocok untuk monitoring panjang.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="C" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1a1a2e;padding:10px;border-radius:6px;font-size:11px;color:#eee;font-family:monospace">
+        <!-- Full width graphs -->
+        <div style="background:#16213e;border-radius:4px;padding:6px;margin-bottom:6px;height:45px">
+          <div style="color:#888;font-size:9px;margin-bottom:2px">● NORMAL &nbsp; Stage1: OK &nbsp; Stage2: OK &nbsp; Score: 0.12</div>
+          <div style="height:25px;background:#1a1a2e;border-radius:2px;position:relative;overflow:hidden">
+            <div style="position:absolute;bottom:0;left:0;right:0;height:12%;background:#2ecc7166;border-top:1px solid #2ecc71"></div>
+          </div>
+        </div>
+        <div style="background:#16213e;border-radius:4px;padding:6px;margin-bottom:6px;height:50px">
+          <div style="color:#888;font-size:9px;margin-bottom:2px">PRB Utilization DL/UL</div>
+          <div style="height:30px;background:#1a1a2e;border-radius:2px;overflow:hidden;position:relative">
+            <div style="position:absolute;bottom:0;height:40%;left:0;right:0;background:linear-gradient(180deg,#e9456066,transparent);border-top:1px solid #e94560"></div>
+            <div style="position:absolute;bottom:0;height:20%;left:0;right:0;background:linear-gradient(180deg,#3498db44,transparent);border-top:1px solid #3498db"></div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px">
+          <div style="background:#16213e;border-radius:4px;padding:5px;height:40px">
+            <div style="color:#888;font-size:8px">CQI</div>
+            <div style="height:22px;background:#1a1a2e;border-radius:2px;position:relative;overflow:hidden">
+              <div style="position:absolute;top:5px;left:0;right:0;height:2px;background:#f39c12aa"></div>
+            </div>
+          </div>
+          <div style="background:#16213e;border-radius:4px;padding:5px;height:40px">
+            <div style="color:#888;font-size:8px">RACH Preamble</div>
+            <div style="height:22px;background:#1a1a2e;border-radius:2px;position:relative;overflow:hidden">
+              <div style="position:absolute;bottom:0;left:40%;width:3px;top:3px;background:#e74c3c88"></div>
+            </div>
+          </div>
+          <div style="background:#16213e;border-radius:4px;padding:5px;height:40px">
+            <div style="color:#888;font-size:8px">UL Air Delay</div>
+            <div style="height:22px;background:#1a1a2e;border-radius:2px;position:relative;overflow:hidden">
+              <div style="position:absolute;bottom:0;left:0;right:0;height:15%;background:#9b59b666;border-top:1px solid #9b59b6"></div>
+            </div>
+          </div>
+        </div>
+        <div style="background:#16213e;border-radius:4px;padding:5px;height:35px">
+          <div style="color:#888;font-size:8px">LSTM Features Heatmap (rolling)</div>
+          <div style="height:18px;background:#1a1a2e;border-radius:2px;display:flex;gap:1px;align-items:flex-end;padding:2px">
+            <div style="flex:1;background:#2ecc7144;height:40%;border-radius:1px"></div>
+            <div style="flex:1;background:#2ecc7166;height:60%;border-radius:1px"></div>
+            <div style="flex:1;background:#2ecc7122;height:30%;border-radius:1px"></div>
+            <div style="flex:1;background:#2ecc7144;height:50%;border-radius:1px"></div>
+            <div style="flex:1;background:#f39c1266;height:70%;border-radius:1px"></div>
+            <div style="flex:1;background:#2ecc7133;height:35%;border-radius:1px"></div>
+            <div style="flex:1;background:#2ecc7144;height:45%;border-radius:1px"></div>
+            <div style="flex:1;background:#2ecc7122;height:25%;border-radius:1px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Full-Width Stacked + Feature Heatmap</h3>
+      <p>Semua panel full-width. Status di atas, PRB utama, lalu CQI/RACH/Delay side-by-side, terakhir LSTM feature bar. Paling detail.</p>
+    </div>
+  </div>
+
+</div>

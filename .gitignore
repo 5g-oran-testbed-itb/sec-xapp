@@ -1,0 +1,12 @@
+# Python Environments
+venv/
+env/
+
+# Data and Logs
+*.csv
+*.log
+
+# Python Cache
+__pycache__/
+*.pyc
+security-xapp/venv

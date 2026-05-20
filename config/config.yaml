@@ -1,0 +1,93 @@
+# Security xApp Configuration
+
+xapp:
+  name: "security-xapp"
+  version: "1.0.0"
+  ric:
+    report_period_ms: 10 # Target <100ms detection
+  
+# Virtual E2 Agent Settings
+virtual_ue:
+  enabled: true
+  num_ues: 10
+  report_interval_ms: 10 # Dipercepat ke 10ms untuk <100ms detection target
+  
+# KPI Normal Ranges
+kpi_ranges:
+  prb_utilization:
+    min: 30
+    max: 70
+    anomaly_threshold: 95
+  dl_throughput:
+    min: 500
+    max: 5000
+    anomaly_low: 50
+    anomaly_high: 20000
+  ul_throughput:
+    min: 200
+    max: 2000
+    anomaly_low: 50
+    anomaly_high: 5000
+  rrc_connections:
+    min: 5
+    max: 20
+    anomaly_threshold: 500
+  packet_loss:
+    min: 0
+    max: 1
+    anomaly_threshold: 10
+  latency:
+    min: 5
+    max: 15
+    anomaly_threshold: 50
+  ue_attach_rate:
+    min: 1
+    max: 5
+    anomaly_threshold: 50
+  handover_rate:
+    min: 0
+    max: 3
+    anomaly_threshold: 20
+
+# Detection Settings
+detection:
+  lstm_enabled: true
+  threshold_enabled: true
+  sequence_length: 3
+  anomaly_threshold_percentile: 99.5
+  
+# LSTM Model Parameters
+lstm_model:
+  model_path: "models/lstm_autoencoder.pt"
+  model_path: "models/lstm_autoencoder.pt"
+  input_features: 8
+  encoder_hidden: [64, 32]
+  decoder_hidden: [32, 64]
+  latent_dim: 32
+  learning_rate: 0.001
+  epochs: 50
+  batch_size: 32
+
+# Alert Settings
+alert:
+  severity_levels:
+    - LOW
+    - MEDIUM
+    - HIGH
+    - CRITICAL
+  log_to_console: true
+  log_to_file: true
+  log_file: "logs/alerts.log"
+
+# Storage Settings
+storage:
+  type: "sqlite"
+  database_path: "data/security_xapp.db"
+  retention_days: 30
+
+# Logging
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+# (line ini sudah ada, tinggal tambah model_path jika belum ada)
+# (line ini sudah ada, tinggal tambah model_path jika belum ada)

@@ -1,0 +1,203 @@
+<h2>Testing Page — Layout Options</h2>
+<p class="subtitle">Pilih layout untuk halaman pengujian (accuracy, recall, F1, latency, per-stage & per-attack)</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="A" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1a1a2e;padding:10px;border-radius:6px;font-size:10px;color:#eee;font-family:monospace">
+        <!-- Overall stats row -->
+        <div style="color:#888;font-size:8px;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Overall — Hybrid IDS</div>
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:8px">
+          <div style="background:#16213e;border-radius:4px;padding:5px;text-align:center">
+            <div style="color:#2ecc71;font-size:15px;font-weight:bold">94.1%</div>
+            <div style="color:#888;font-size:8px">Accuracy</div>
+          </div>
+          <div style="background:#16213e;border-radius:4px;padding:5px;text-align:center">
+            <div style="color:#3498db;font-size:15px;font-weight:bold">96.2%</div>
+            <div style="color:#888;font-size:8px">Recall</div>
+          </div>
+          <div style="background:#16213e;border-radius:4px;padding:5px;text-align:center">
+            <div style="color:#f39c12;font-size:15px;font-weight:bold">95.8%</div>
+            <div style="color:#888;font-size:8px">Precision</div>
+          </div>
+          <div style="background:#16213e;border-radius:4px;padding:5px;text-align:center">
+            <div style="color:#e74c3c;font-size:15px;font-weight:bold">96.0%</div>
+            <div style="color:#888;font-size:8px">F1-Score</div>
+          </div>
+          <div style="background:#16213e;border-radius:4px;padding:5px;text-align:center">
+            <div style="color:#9b59b6;font-size:15px;font-weight:bold">320ms</div>
+            <div style="color:#888;font-size:8px">Avg Latency</div>
+          </div>
+        </div>
+        <!-- Per-attack table -->
+        <div style="background:#16213e;border-radius:4px;padding:6px;margin-bottom:8px">
+          <div style="color:#888;font-size:8px;margin-bottom:4px;text-transform:uppercase">Per-Attack Breakdown</div>
+          <table style="width:100%;border-collapse:collapse;font-size:8px">
+            <tr style="color:#555;border-bottom:1px solid #2a2a4a">
+              <td style="padding:2px 4px">Attack</td>
+              <td style="padding:2px 4px;text-align:right">Recall</td>
+              <td style="padding:2px 4px;text-align:right">F1</td>
+              <td style="padding:2px 4px;text-align:right">Latency</td>
+              <td style="padding:2px 4px">Stage</td>
+            </tr>
+            <tr style="border-bottom:1px solid #1a1a2e"><td style="padding:2px 4px;color:#e94560">UL Flood</td><td style="padding:2px 4px;text-align:right;color:#2ecc71">99.1%</td><td style="padding:2px 4px;text-align:right">98.8%</td><td style="padding:2px 4px;text-align:right">280ms</td><td style="padding:2px 4px"><span style="background:#0d3b1e;color:#2ecc71;padding:1px 4px;border-radius:2px">S1</span></td></tr>
+            <tr style="border-bottom:1px solid #1a1a2e"><td style="padding:2px 4px;color:#e94560">DL Flood</td><td style="padding:2px 4px;text-align:right;color:#2ecc71">98.3%</td><td style="padding:2px 4px;text-align:right">97.9%</td><td style="padding:2px 4px;text-align:right">310ms</td><td style="padding:2px 4px"><span style="background:#0d3b1e;color:#2ecc71;padding:1px 4px;border-radius:2px">S1</span></td></tr>
+            <tr style="border-bottom:1px solid #1a1a2e"><td style="padding:2px 4px;color:#f39c12">Burst ON/OFF</td><td style="padding:2px 4px;text-align:right;color:#f39c12">79.9%</td><td style="padding:2px 4px;text-align:right">81.2%</td><td style="padding:2px 4px;text-align:right">520ms</td><td style="padding:2px 4px"><span style="background:#1a1a0d;color:#f39c12;padding:1px 4px;border-radius:2px">S2</span></td></tr>
+            <tr style="border-bottom:1px solid #1a1a2e"><td style="padding:2px 4px;color:#3498db">RRC Storm</td><td style="padding:2px 4px;text-align:right;color:#2ecc71">97.4%</td><td style="padding:2px 4px;text-align:right">96.8%</td><td style="padding:2px 4px;text-align:right">290ms</td><td style="padding:2px 4px"><span style="background:#0d3b1e;color:#2ecc71;padding:1px 4px;border-radius:2px">S1</span></td></tr>
+            <tr><td style="padding:2px 4px;color:#9b59b6">RF Jammer</td><td style="padding:2px 4px;text-align:right;color:#e74c3c">62.3%</td><td style="padding:2px 4px;text-align:right">65.1%</td><td style="padding:2px 4px;text-align:right">480ms</td><td style="padding:2px 4px"><span style="background:#1a1a0d;color:#f39c12;padding:1px 4px;border-radius:2px">S2</span></td></tr>
+          </table>
+        </div>
+        <!-- Bar chart -->
+        <div style="background:#16213e;border-radius:4px;padding:6px">
+          <div style="color:#888;font-size:8px;margin-bottom:4px">F1-Score per Attack</div>
+          <div style="display:flex;flex-direction:column;gap:3px">
+            <div style="display:flex;align-items:center;gap:4px"><div style="color:#aaa;width:45px;font-size:7px">UL Flood</div><div style="flex:1;background:#1a1a2e;border-radius:2px;height:8px"><div style="width:99%;height:8px;background:#2ecc71;border-radius:2px"></div></div></div>
+            <div style="display:flex;align-items:center;gap:4px"><div style="color:#aaa;width:45px;font-size:7px">DL Flood</div><div style="flex:1;background:#1a1a2e;border-radius:2px;height:8px"><div style="width:98%;height:8px;background:#3498db;border-radius:2px"></div></div></div>
+            <div style="display:flex;align-items:center;gap:4px"><div style="color:#aaa;width:45px;font-size:7px">Burst</div><div style="flex:1;background:#1a1a2e;border-radius:2px;height:8px"><div style="width:81%;height:8px;background:#f39c12;border-radius:2px"></div></div></div>
+            <div style="display:flex;align-items:center;gap:4px"><div style="color:#aaa;width:45px;font-size:7px">RRC Storm</div><div style="flex:1;background:#1a1a2e;border-radius:2px;height:8px"><div style="width:97%;height:8px;background:#9b59b6;border-radius:2px"></div></div></div>
+            <div style="display:flex;align-items:center;gap:4px"><div style="color:#aaa;width:45px;font-size:7px">RF Jammer</div><div style="flex:1;background:#1a1a2e;border-radius:2px;height:8px"><div style="width:65%;height:8px;background:#e74c3c;border-radius:2px"></div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Overall Stats + Table + Bar Chart</h3>
+      <p>5 stat besar di atas (overall), tabel per-serangan di tengah, bar chart F1 di bawah. Ringkas dan langsung terlihat mana yang lemah.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="B" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1a1a2e;padding:10px;border-radius:6px;font-size:10px;color:#eee;font-family:monospace">
+        <!-- 3 columns: Stage 1, Stage 2, Hybrid -->
+        <div style="color:#888;font-size:8px;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px">Per-Stage Comparison</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px">
+          <!-- Stage 1 -->
+          <div style="background:#16213e;border-radius:4px;padding:6px">
+            <div style="color:#3498db;font-size:8px;font-weight:bold;margin-bottom:4px;text-align:center">STAGE 1 — Rule-Based</div>
+            <div style="text-align:center;margin-bottom:3px"><span style="color:#2ecc71;font-size:14px;font-weight:bold">91.2%</span><div style="color:#888;font-size:7px">Accuracy</div></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;font-size:8px">
+              <div style="background:#1a1a2e;border-radius:2px;padding:3px;text-align:center"><div style="color:#3498db">94.1%</div><div style="color:#555;font-size:7px">Recall</div></div>
+              <div style="background:#1a1a2e;border-radius:2px;padding:3px;text-align:center"><div style="color:#f39c12">92.8%</div><div style="color:#555;font-size:7px">F1</div></div>
+            </div>
+            <div style="margin-top:4px;font-size:7px;color:#888">Latency: <span style="color:#2ecc71">~300ms</span></div>
+          </div>
+          <!-- Stage 2 -->
+          <div style="background:#16213e;border-radius:4px;padding:6px">
+            <div style="color:#9b59b6;font-size:8px;font-weight:bold;margin-bottom:4px;text-align:center">STAGE 2 — LSTM</div>
+            <div style="text-align:center;margin-bottom:3px"><span style="color:#f39c12;font-size:14px;font-weight:bold">87.5%</span><div style="color:#888;font-size:7px">Accuracy</div></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;font-size:8px">
+              <div style="background:#1a1a2e;border-radius:2px;padding:3px;text-align:center"><div style="color:#3498db">85.3%</div><div style="color:#555;font-size:7px">Recall</div></div>
+              <div style="background:#1a1a2e;border-radius:2px;padding:3px;text-align:center"><div style="color:#f39c12">86.1%</div><div style="color:#555;font-size:7px">F1</div></div>
+            </div>
+            <div style="margin-top:4px;font-size:7px;color:#888">Latency: <span style="color:#f39c12">~520ms</span></div>
+          </div>
+          <!-- Hybrid -->
+          <div style="background:#16213e;border-radius:4px;padding:6px;border:1px solid #2ecc7144">
+            <div style="color:#2ecc71;font-size:8px;font-weight:bold;margin-bottom:4px;text-align:center">HYBRID ★ Best</div>
+            <div style="text-align:center;margin-bottom:3px"><span style="color:#2ecc71;font-size:14px;font-weight:bold">94.1%</span><div style="color:#888;font-size:7px">Accuracy</div></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;font-size:8px">
+              <div style="background:#1a1a2e;border-radius:2px;padding:3px;text-align:center"><div style="color:#3498db">96.2%</div><div style="color:#555;font-size:7px">Recall</div></div>
+              <div style="background:#1a1a2e;border-radius:2px;padding:3px;text-align:center"><div style="color:#f39c12">96.0%</div><div style="color:#555;font-size:7px">F1</div></div>
+            </div>
+            <div style="margin-top:4px;font-size:7px;color:#888">Latency: <span style="color:#2ecc71">~320ms</span></div>
+          </div>
+        </div>
+        <!-- Per-attack mini bars -->
+        <div style="background:#16213e;border-radius:4px;padding:6px">
+          <div style="color:#888;font-size:8px;margin-bottom:4px">Recall per Attack Type (Hybrid)</div>
+          <div style="display:flex;gap:4px;align-items:flex-end;height:35px">
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end">
+              <div style="width:100%;background:#2ecc71;border-radius:2px 2px 0 0" style="height:33px"></div>
+              <div style="color:#888;font-size:6px;margin-top:1px">UL</div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end">
+              <div style="width:100%;background:#3498db;height:32px;border-radius:2px 2px 0 0"></div>
+              <div style="color:#888;font-size:6px;margin-top:1px">DL</div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end">
+              <div style="width:100%;background:#f39c12;height:26px;border-radius:2px 2px 0 0"></div>
+              <div style="color:#888;font-size:6px;margin-top:1px">Burst</div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end">
+              <div style="width:100%;background:#9b59b6;height:31px;border-radius:2px 2px 0 0"></div>
+              <div style="color:#888;font-size:6px;margin-top:1px">RRC</div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end">
+              <div style="width:100%;background:#e74c3c;height:20px;border-radius:2px 2px 0 0"></div>
+              <div style="color:#888;font-size:6px;margin-top:1px">RF</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Per-Stage Columns + Per-Attack Bar</h3>
+      <p>Tiga kolom: Stage 1 (Rule-Based), Stage 2 (LSTM), Hybrid. Perbandingan antar stage langsung terlihat. Cocok untuk bagian analisis skripsi.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="C" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1a1a2e;padding:10px;border-radius:6px;font-size:10px;color:#eee;font-family:monospace">
+        <!-- Combined: Stats + Stage comparison + latency -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:7px">
+          <div style="background:#16213e;border-radius:4px;padding:5px;text-align:center">
+            <div style="color:#2ecc71;font-size:14px;font-weight:bold">94.1%</div>
+            <div style="color:#888;font-size:7px">Accuracy</div>
+          </div>
+          <div style="background:#16213e;border-radius:4px;padding:5px;text-align:center">
+            <div style="color:#3498db;font-size:14px;font-weight:bold">96.2%</div>
+            <div style="color:#888;font-size:7px">Recall</div>
+          </div>
+          <div style="background:#16213e;border-radius:4px;padding:5px;text-align:center">
+            <div style="color:#f39c12;font-size:14px;font-weight:bold">96.0%</div>
+            <div style="color:#888;font-size:7px">F1-Score</div>
+          </div>
+          <div style="background:#16213e;border-radius:4px;padding:5px;text-align:center">
+            <div style="color:#9b59b6;font-size:14px;font-weight:bold">0.5%</div>
+            <div style="color:#888;font-size:7px">FPR</div>
+          </div>
+        </div>
+        <!-- Stage comparison radar-like -->
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:7px;margin-bottom:7px">
+          <div style="background:#16213e;border-radius:4px;padding:6px">
+            <div style="color:#888;font-size:8px;margin-bottom:4px">Metric Comparison — Stage 1 vs Stage 2 vs Hybrid</div>
+            <div style="font-size:8px">
+              <div style="display:flex;justify-content:space-between;color:#555;border-bottom:1px solid #2a2a4a;padding-bottom:2px;margin-bottom:2px">
+                <span>Metric</span><span>S1</span><span>S2</span><span style="color:#2ecc71">Hybrid</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #1a1a2e"><span style="color:#aaa">Accuracy</span><span>91.2</span><span>87.5</span><span style="color:#2ecc71">94.1</span></div>
+              <div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #1a1a2e"><span style="color:#aaa">Recall</span><span>94.1</span><span>85.3</span><span style="color:#2ecc71">96.2</span></div>
+              <div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #1a1a2e"><span style="color:#aaa">F1</span><span>92.8</span><span>86.1</span><span style="color:#2ecc71">96.0</span></div>
+              <div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:#aaa">Latency</span><span style="color:#2ecc71">300ms</span><span style="color:#f39c12">520ms</span><span style="color:#2ecc71">320ms</span></div>
+            </div>
+          </div>
+          <div style="background:#16213e;border-radius:4px;padding:6px">
+            <div style="color:#888;font-size:8px;margin-bottom:4px">Latency Distribution</div>
+            <div style="display:flex;flex-direction:column;gap:3px">
+              <div><div style="color:#888;font-size:7px">S1 detect</div><div style="height:7px;background:#3498db;width:55%;border-radius:2px"></div></div>
+              <div><div style="color:#888;font-size:7px">S2 confirm</div><div style="height:7px;background:#9b59b6;width:100%;border-radius:2px"></div></div>
+              <div><div style="color:#888;font-size:7px">Total</div><div style="height:7px;background:#2ecc71;width:62%;border-radius:2px"></div></div>
+            </div>
+          </div>
+        </div>
+        <!-- Confusion matrix mini -->
+        <div style="background:#16213e;border-radius:4px;padding:6px">
+          <div style="color:#888;font-size:8px;margin-bottom:3px">Confusion Matrix (Hybrid)</div>
+          <div style="display:grid;grid-template-columns:auto repeat(2,1fr);gap:2px;font-size:8px">
+            <div></div><div style="text-align:center;color:#555;font-size:7px">Pred: Normal</div><div style="text-align:center;color:#555;font-size:7px">Pred: Attack</div>
+            <div style="color:#555;font-size:7px">Act: Normal</div><div style="background:#0d3b1e;border-radius:2px;text-align:center;padding:2px;color:#2ecc71">8,241 TN</div><div style="background:#2a1a1a;border-radius:2px;text-align:center;padding:2px;color:#e74c3c">41 FP</div>
+            <div style="color:#555;font-size:7px">Act: Attack</div><div style="background:#2a1a1a;border-radius:2px;text-align:center;padding:2px;color:#e74c3c">385 FN</div><div style="background:#0d3b1e;border-radius:2px;text-align:center;padding:2px;color:#2ecc71">9,933 TP</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Stats + Stage Comparison Table + Confusion Matrix</h3>
+      <p>4 stat besar, tabel perbandingan S1/S2/Hybrid, distribusi latency, dan confusion matrix. Paling lengkap untuk laporan skripsi.</p>
+    </div>
+  </div>
+
+</div>

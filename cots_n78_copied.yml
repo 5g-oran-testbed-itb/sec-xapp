@@ -1,0 +1,69 @@
+cu_cp:
+  inactivity_timer: 7200
+  amf:
+    addr: 10.91.2.4
+    port: 38412
+    bind_addr: 10.91.2.1
+    supported_tracking_areas:
+    - tac: 7
+      plmn_list:
+      - plmn: '00101'
+        tai_slice_support_list:
+        - sst: 1
+ru_sdr:
+  device_driver: uhd
+  device_args: type=b200
+  clock: internal
+  srate: 46.08
+  tx_gain: 80
+  rx_gain: 40
+cell_cfg:
+  dl_arfcn: 627340
+  band: 78
+  channel_bandwidth_MHz: 40
+  common_scs: 30
+  plmn: '00101'
+  tac: 7
+  pci: 1
+  pusch:
+    min_k2: 2
+  tdd_ul_dl_cfg:
+    dl_ul_tx_period: 4
+    nof_dl_slots: 2
+    nof_dl_symbols: 10
+    nof_ul_slots: 1
+    nof_ul_symbols: 0
+  pucch:
+    sr_period_ms: 2
+    min_k1: 2
+  mac_cell_group:
+    bsr_cfg:
+      periodic_bsr_timer: 1
+  pdsch:
+    mcs_table: qam256
+  ssb:
+    ssb_period: 20
+e2:
+  enable_du_e2: true
+  enable_cu_cp_e2: true
+  addr: 10.91.2.2
+  port: 36421
+  bind_addr: 10.91.2.1
+  e2sm_kpm_enabled: true
+  e2sm_rc_enabled: false
+log:
+  filename: /home/telmat/TA-Rizqi-Nabiel/O-RAN-Testbed-Automation/Next_Generation_Node_B/logs/gnb_cots_n78.log
+  all_level: info
+  rrc_level: debug
+metrics:
+  autostart_stdout_metrics: true
+  enable_json: true
+  enable_log: false
+  layers:
+    enable_mac: true
+    enable_rrc: true
+    enable_sched: true
+remote_control:
+  enabled: true
+  bind_addr: 127.0.0.1
+  port: 5555
