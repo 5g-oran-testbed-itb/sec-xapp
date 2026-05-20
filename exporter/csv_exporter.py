@@ -44,17 +44,6 @@ g_eval_f1     = Gauge("xapp_eval_f1",          "Eval F1",         ["stage", "att
 g_eval_fpr    = Gauge("xapp_eval_fpr",         "Eval FPR",        ["stage"])
 
 # ── CSV columns we care about ────────────────────────────────────────────────
-FLOAT_COLS = [
-    "prb_usage_dl_ratio", "prb_usage_ul_ratio",
-    "cqi", "rach_preamble", "air_delay_ul",
-    "prb_direction", "prb_total",
-    "prb_dl_delta", "prb_ul_delta", "prb_burst_index",
-    "empty_ind_rate",
-    "prb_dl_roll_mean", "prb_dl_roll_std",
-    "prb_ul_roll_std", "prb_ul_roll_max",
-    "prb_ul_roll_max_100",
-]
-
 LSTM_FEATURES = [
     "prb_usage_dl_ratio", "prb_usage_ul_ratio",
     "cqi", "rach_preamble", "air_delay_ul",
@@ -65,6 +54,7 @@ LSTM_FEATURES = [
     "prb_ul_roll_std", "prb_ul_roll_max",
     "prb_ul_roll_max_100",
 ]
+FLOAT_COLS = LSTM_FEATURES  # same columns; alias used in parse_csv_row
 WINDOW_SIZE = 10
 
 
@@ -75,7 +65,10 @@ def find_newest_csv(csv_dir: str):
     files = glob.glob(os.path.join(csv_dir, "*.csv"))
     if not files:
         return None
-    return max(files, key=os.path.getmtime)
+    try:
+        return max(files, key=os.path.getmtime)
+    except FileNotFoundError:
+        return None
 
 
 def parse_csv_row(raw: dict) -> dict:
@@ -144,10 +137,14 @@ class OnnxInferencer:
     THRESHOLD = 0.5  # ONNX output already normalized: >0.5 = anomaly
 
     def __init__(self, model_path: str):
-        self._sess    = ort.InferenceSession(model_path)
+        try:
+            self._sess = ort.InferenceSession(model_path)
+        except Exception as e:
+            log.warning("ONNX model not loaded (%s): %s", model_path, e)
+            self._sess = None
         self._window  = np.zeros((WINDOW_SIZE, len(LSTM_FEATURES)), dtype=np.float32)
         self._filled  = 0
-        self._in_name = self._sess.get_inputs()[0].name
+        self._in_name = self._sess.get_inputs()[0].name if self._sess else None
 
     def update(self, row: dict) -> float:
         """Feed one row, return normalized anomaly score (0–1+)."""
@@ -157,9 +154,11 @@ class OnnxInferencer:
         if self._filled < WINDOW_SIZE:
             self._filled += 1
             return 0.0
+        if self._sess is None:
+            return 0.0
         inp = self._window[np.newaxis, ...]  # shape (1, 10, 16)
         out = self._sess.run(None, {self._in_name: inp})
-        return float(out[0])  # ONNX output: normalized score
+        return float(out[0].flatten()[0])  # safe numpy extraction
 
 
 # ── Grafana annotation helper ────────────────────────────────────────────────
@@ -170,10 +169,17 @@ def push_grafana_annotation(stage: int, prev_stage: int):
     text = {0: "Returned to NORMAL", 1: "STAGE1 WARNING detected",
             2: "STAGE2 CRITICAL confirmed"}
     try:
-        user, pwd = GRAFANA_TOKEN.split(":", 1)
+        if ":" in GRAFANA_TOKEN:
+            user, pwd = GRAFANA_TOKEN.split(":", 1)
+            auth = (user, pwd)
+            headers = {}
+        else:
+            auth = None
+            headers = {"Authorization": f"Bearer {GRAFANA_TOKEN}"}
         requests.post(
             f"{GRAFANA_URL}/api/annotations",
-            auth=(user, pwd),
+            auth=auth,
+            headers=headers,
             json={
                 "text": text.get(stage, "Unknown"),
                 "tags": tags.get(stage, []),
@@ -200,11 +206,12 @@ def csv_tail_loop(onnx: OnnxInferencer, rule: SimpleRuleEngine):
         if newest != current_file:
             if file_handle:
                 file_handle.close()
+                file_handle = None
+                reader = None
             if newest:
                 log.info("Tailing new CSV: %s", newest)
                 file_handle = open(newest, newline="")
                 reader = csv.DictReader(file_handle)
-                # skip to end so we only read new rows
                 for _ in reader:
                     pass
             current_file = newest
