@@ -7,6 +7,9 @@ Usage:
 """
 
 import argparse
+import json
+import os
+import datetime
 import numpy as np
 import onnxruntime as ort
 from sklearn.metrics import (
@@ -293,6 +296,62 @@ class LSTMDetector:
 
 # ── Main evaluation ───────────────────────────────────────────────────────────
 
+ATTACK_KEY = {1: "ul_flood", 2: "dl_flood", 3: "burst", 4: "rrc_storm", 5: "rf_jammer"}
+
+
+def _build_eval_json(labels, rule_sev, lstm_sev, final_sev, y_true, csv_path):
+    """Return dict matching eval_results.json schema."""
+
+    def stage_metrics(pred_sev):
+        y_pred = (pred_sev >= 1).astype(int)
+        normal_mask = labels == 0
+        n_normal = normal_mask.sum()
+        fp = (pred_sev[normal_mask] >= 1).sum()
+        return {
+            "accuracy":   float(accuracy_score(y_true, y_pred)),
+            "recall":     float(recall_score(y_true, y_pred, zero_division=0)),
+            "precision":  float(precision_score(y_true, y_pred, zero_division=0)),
+            "f1":         float(f1_score(y_true, y_pred, zero_division=0)),
+            "fpr":        float(fp / n_normal) if n_normal > 0 else 0.0,
+        }
+
+    def attack_metrics(lbl, pred_sev):
+        mask = labels == lbl
+        if mask.sum() == 0:
+            return None
+        y_t = (labels[mask] != 0).astype(int)
+        y_p = (pred_sev[mask] >= 1).astype(int)
+        return {
+            "recall":     float(recall_score(y_t, y_p, zero_division=0)),
+            "precision":  float(precision_score(y_t, y_p, zero_division=0)),
+            "f1":         float(f1_score(y_t, y_p, zero_division=0)),
+            "count":      int(mask.sum()),
+        }
+
+    per_stage = {
+        "stage1":  stage_metrics(rule_sev),
+        "stage2":  stage_metrics(lstm_sev),
+        "hybrid":  stage_metrics(final_sev),
+    }
+
+    per_attack = {}
+    for lbl, key in ATTACK_KEY.items():
+        entry = {}
+        for stage_name, sev in [("stage1", rule_sev), ("stage2", lstm_sev), ("hybrid", final_sev)]:
+            m = attack_metrics(lbl, sev)
+            if m:
+                entry[stage_name] = m
+        if entry:
+            per_attack[key] = entry
+
+    return {
+        "timestamp": datetime.datetime.now().isoformat(),
+        "dataset": str(csv_path),
+        "per_stage": per_stage,
+        "per_attack": per_attack,
+    }
+
+
 def load_csv(path):
     import csv
     rows = []
@@ -304,7 +363,7 @@ def load_csv(path):
     return rows
 
 
-def run_evaluation(csv_path, onnx_path):
+def run_evaluation(csv_path, onnx_path, output_path=None):
     print(f"Loading dataset: {csv_path}")
     rows = load_csv(csv_path)
     print(f"  {len(rows)} rows, labels: { {int(l): sum(1 for r in rows if int(r['label'])==l) for l in sorted(set(int(r['label']) for r in rows))} }")
@@ -448,12 +507,20 @@ def run_evaluation(csv_path, onnx_path):
               f"{np.percentile(sc,95):>9.6f} {np.percentile(sc,99):>9.6f} "
               f"{above/len(sc):>7.1%}")
 
+    if output_path:
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        result = _build_eval_json(labels, rule_sev, lstm_sev, final_sev, y_true, csv_path)
+        with open(output_path, "w") as f:
+            json.dump(result, f, indent=2)
+        print(f"\n[OK] Hasil evaluasi ditulis ke: {output_path}")
+
     print()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--csv",   default=DEFAULT_CSV,  help="Path ke dataset CSV")
-    parser.add_argument("--model", default=ONNX_MODEL,   help="Path ke ONNX model")
+    parser.add_argument("--csv",    default=DEFAULT_CSV,  help="Path ke dataset CSV")
+    parser.add_argument("--model",  default=ONNX_MODEL,   help="Path ke ONNX model")
+    parser.add_argument("--output", default=None,          help="Tulis hasil evaluasi ke JSON (opsional)")
     args = parser.parse_args()
-    run_evaluation(args.csv, args.model)
+    run_evaluation(args.csv, args.model, output_path=args.output)
