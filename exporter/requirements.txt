@@ -1,0 +1,5 @@
+prometheus-client==0.20.0
+onnxruntime==1.18.1
+watchdog==4.0.1
+numpy==1.26.4
+requests==2.32.3
