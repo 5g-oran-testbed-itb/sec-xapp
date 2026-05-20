@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  csv-exporter:
+    build: ./exporter
+    container_name: xapp-exporter
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./csv:/data/csv:ro
+      - ./results:/data/results:ro
+      - ./security_model.onnx:/data/security_model.onnx:ro
+      - ./security_model.onnx.data:/data/security_model.onnx.data:ro
+    environment:
+      - CSV_DIR=/data/csv
+      - EVAL_JSON=/data/results/eval_results.json
+      - ONNX_MODEL=/data/security_model.onnx
+      - GRAFANA_URL=http://grafana:3000
+      - GRAFANA_TOKEN=admin:admin
+    restart: unless-stopped
+    depends_on:
+      - grafana
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: xapp-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=7d'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: xapp-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_USERS_ALLOW_SIGN_UP=false
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  grafana_data:
