@@ -1,7 +1,7 @@
 # Design: xapp_sec_mitigate — E2SM-RC Mitigation xApp
 
 **Date:** 2026-05-22  
-**Status:** Approved  
+**Status:** Draft Approved  
 **Author:** telmat
 
 ---
@@ -144,7 +144,7 @@ target_link_libraries(xapp_sec_mitigate
 | `timestamp` | int | Unix epoch seconds |
 | `attack` | string | `"UL_FLOOD"`, `"DL_FLOOD"`, `"RRC_STORM"`, `"RADIO_DEGRADATION"`, `"BURST_ANOMALY"`, `"UNKNOWN"` |
 | `severity` | string | `"WARNING"`, `"CRITICAL"` |
-| `confidence` | float | LSTM anomaly score (0.0–1.0), `0.0` if rule-only |
+| `confidence` | float | Normalized anomaly confidence or rule confidence (0.0–1.0), `0.0` if rule-only |
 | `action` | string | `"THROTTLE"` or `"RESTORE"` |
 | `prb_limit` | int | 1–100 |
 | `reason` | string | human-readable trigger string |
@@ -293,6 +293,16 @@ The start script (`start_xapp_c_mitigate.sh`) will be updated:
 - Remove the iptables watcher (Layer 2 fallback) — replaced by RC throttle
 - Add a pane for `xapp_sec_mitigate`
 - Start mitigator before `xapp_sec_moni`
+
+---
+
+## Known Limitations
+
+- PRB throttle targets the UE/slice identified by `--ue_f1ap`. If the attacker UE's F1AP ID
+  changes across sessions (e.g., UE reconnects), the CLI argument must be updated or a dynamic
+  UE discovery mechanism must be added.
+- Control-plane attacks (RRC Storm) are not effectively mitigated by PRB throttle — SSH AMF
+  barring remains the fallback for those cases.
 
 ---
 
