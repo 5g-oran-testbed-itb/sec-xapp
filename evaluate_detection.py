@@ -19,7 +19,7 @@ from sklearn.metrics import (
 
 # ── Config ──────────────────────────────────────────────────────────────────
 ONNX_MODEL   = "/home/telmat/sec-xapp/security_model.onnx"
-DEFAULT_CSV  = "/home/telmat/sec-xapp/csv/dataset_testing_v2_with_empty.csv"
+DEFAULT_CSV  = "/home/telmat/sec-xapp/csv/dataset_testing_v3.csv"
 LSTM_THRESH  = 0.5        # ONNX output = 0.5*(mse/raw_threshold); >0.5 = anomali
 WINDOW_SIZE  = 10         # timesteps per LSTM window
 
@@ -68,6 +68,18 @@ class RuleBasedIDS:
 
         # Stage 2 RRC storm
         self.s2_rrc_cnt = 0
+
+        # Rule 3c: sustained RACH counter
+        self.rach_sustained_cnt = 0
+
+        # Rule 3d: CQI rolling buffer untuk oscillation detection
+        self.cqi_buf   = [0.0] * 10
+        self.cqi_head  = 0
+        self.cqi_count = 0
+
+        # Rule 3e: RRC storm persistence window
+        self.rrc_recent_triggers = []   # timestamps of recent 3b/3c triggers
+        self.rrc_storm_until     = 0    # ms — storm window active until
 
         # Rule 7: previous PRB total
         self.prev_prb_total = 0.0
@@ -137,17 +149,67 @@ class RuleBasedIDS:
             severity = max(severity, 1)
 
         # ── Rule 3b: RRC Storm via empty indications ─────────────────────────
-        if empty_ind >= 2.0 and prb_ul_pct < 30.0 and prb_dl_pct < 30.0:
+        cond_3b = (empty_ind >= 2.0 and prb_ul_pct < 30.0 and prb_dl_pct < 30.0)
+        if cond_3b:
             self.empty_storm_cnt += 1
-            self.s2_rrc_cnt += 1
         else:
             self.empty_storm_cnt = 0
-            self.s2_rrc_cnt = 0
         if self.empty_storm_cnt >= 3:
             if not stage1_hit:
                 stage1_hit = True
                 alert_type = "rrc_storm"
             severity = max(severity, 1)
+
+        # ── Rule 3c: RRC Storm via sustained RACH activity (low-level reconnect)
+        # Airplane toggle / RRC flood menghasilkan RACH=1 berulang tanpa saturasi PRB.
+        # Threshold RACH>=1 (bukan spike) + low PRB membedakan dari UL/DL Flood.
+        cond_3c = (row["rach_preamble"] >= 1.0 and prb_ul_pct < 30.0 and prb_dl_pct < 30.0)
+        if cond_3c:
+            self.rach_sustained_cnt += 1
+        else:
+            self.rach_sustained_cnt = 0
+        if self.rach_sustained_cnt >= 2:
+            if not stage1_hit:
+                stage1_hit = True
+                alert_type = "rrc_storm"
+            severity = max(severity, 1)
+
+        # ── Rule 3d: CQI Oscillation (UE repeatedly disconnect/reconnect) ───────
+        # Selama RRC Storm, CQI bolak-balik antara 0 (disconnected) dan tinggi.
+        # Rolling std CQI > 3.0 dengan PRB rendah = sinyal kuat storm.
+        cqi_val = row["cqi"]
+        self.cqi_buf[self.cqi_head] = cqi_val
+        self.cqi_head = (self.cqi_head + 1) % 10
+        if self.cqi_count < 10:
+            self.cqi_count += 1
+        cqi_mean = sum(self.cqi_buf[k] for k in range(self.cqi_count)) / self.cqi_count
+        cqi_std = (sum((self.cqi_buf[k] - cqi_mean)**2 for k in range(self.cqi_count)) / self.cqi_count) ** 0.5
+        prb_total = (row["prb_usage_dl_ratio"] + row["prb_usage_ul_ratio"])
+        cond_3d = (cqi_std > 3.0 and prb_total < 0.05)
+        if cond_3d and not stage1_hit:
+            stage1_hit = True
+            alert_type = "rrc_storm"
+            severity = max(severity, 1)
+
+        # ── Rule 3e: RRC Storm Persistence Window ──────────────────────────────
+        # Setelah >= 2 trigger (3b/3c/3d) dalam 3s, pertahankan alert 5s ke depan.
+        # Menangkap periode "diam" antar burst RACH/empty_ind.
+        if cond_3b or cond_3c or cond_3d:
+            self.rrc_recent_triggers = [t for t in self.rrc_recent_triggers if now_ms - t <= 3000]
+            self.rrc_recent_triggers.append(now_ms)
+            if len(self.rrc_recent_triggers) >= 2:
+                self.rrc_storm_until = max(self.rrc_storm_until, now_ms + 5000)
+        if self.rrc_storm_until > 0 and now_ms <= self.rrc_storm_until:
+            if not stage1_hit:
+                stage1_hit = True
+                alert_type = "rrc_storm"
+            severity = max(severity, 1)
+
+        # Stage 2 RRC: increment jika salah satu kondisi 3b/3c/3d/3e aktif
+        if cond_3b or cond_3c or cond_3d or (self.rrc_storm_until > 0 and now_ms <= self.rrc_storm_until):
+            self.s2_rrc_cnt += 1
+        else:
+            self.s2_rrc_cnt = 0
         if self.s2_rrc_cnt >= 4:
             severity = max(severity, 2)
 
@@ -239,6 +301,7 @@ class RuleBasedIDS:
 # ── LSTM simulator ────────────────────────────────────────────────────────────
 
 class LSTMDetector:
+    # Must match FEATURE_NAMES in feature_schema.py exactly
     FEATURES = [
         "prb_usage_dl_ratio", "prb_usage_ul_ratio",
         "cqi", "rach_preamble", "air_delay_ul",
@@ -248,34 +311,74 @@ class LSTMDetector:
         "prb_dl_roll_mean", "prb_dl_roll_std",
         "prb_ul_roll_std", "prb_ul_roll_max",
         "prb_ul_roll_max_100",
+        "cqi_roll_std", "rach_roll_mean",
+        # previously-unused CSV features
+        "prb_total_variance", "prb_dl_ul_asym",
+        "prb_ul_near_zero_rate", "prb_peak_drop", "rach_cqi_joint",
+        # computed rolling features (maintained below)
+        "rach_roll_max_30", "empty_ind_roll_sum_30",
+        # CV features
+        "prb_dl_roll_cv", "prb_ul_roll_cv",
     ]
+    _ROLL30 = 30
+    _ROLL10 = 10
 
-    def __init__(self, model_path, threshold=LSTM_THRESH):
+    def __init__(self, model_path, threshold=LSTM_THRESH, seq_len=WINDOW_SIZE, num_features=None):
         self.sess      = ort.InferenceSession(model_path)
         self.threshold = threshold
-        self.window    = np.zeros((WINDOW_SIZE, len(self.FEATURES)), dtype=np.float32)
+        self.seq_len   = seq_len
+        if num_features is not None and num_features < len(self.FEATURES):
+            self.FEATURES = self.FEATURES[:num_features]
+        self.window    = np.zeros((seq_len, len(self.FEATURES)), dtype=np.float32)
         self.filled    = 0
         self.anomaly_cnt      = 0
         self.stage2_start_ms  = 0
         self.stage2_dur_ms    = 0
         self.severity         = 0
         self.last_score       = 0.0
+        self._rach_buf    = np.zeros(self._ROLL30, dtype=np.float32)
+        self._empty_buf   = np.zeros(self._ROLL30, dtype=np.float32)
+        self._ul_buf      = np.zeros(self._ROLL10, dtype=np.float32)
+        self._roll_filled = 0
+        self._ul_filled   = 0
 
     def update(self, row, now_ms):
-        feat = np.array([row[f] for f in self.FEATURES], dtype=np.float32)
+        # update rolling buffers
+        self._rach_buf  = np.roll(self._rach_buf,  -1); self._rach_buf[-1]  = row["rach_preamble"]
+        self._empty_buf = np.roll(self._empty_buf, -1); self._empty_buf[-1] = row["empty_ind_rate"]
+        self._ul_buf    = np.roll(self._ul_buf,    -1); self._ul_buf[-1]    = row["prb_usage_ul_ratio"]
+        if self._roll_filled < self._ROLL30: self._roll_filled += 1
+        if self._ul_filled   < self._ROLL10: self._ul_filled   += 1
+        n30 = self._roll_filled; n10 = self._ul_filled
+
+        ul_mean = float(self._ul_buf[-n10:].mean()) if n10 > 0 else 0.0
+
+        augmented = dict(row)
+        augmented["rach_roll_max_30"]      = float(self._rach_buf[-n30:].max())
+        augmented["empty_ind_roll_sum_30"] = float(self._empty_buf[-n30:].sum())
+        augmented["prb_dl_roll_cv"]        = row["prb_dl_roll_std"] / (row["prb_dl_roll_mean"] + 1e-6)
+        augmented["prb_ul_roll_cv"]        = row["prb_ul_roll_std"] / (ul_mean + 1e-6)
+
+        feat = np.array([augmented[f] for f in self.FEATURES], dtype=np.float32)
         self.window = np.roll(self.window, -1, axis=0)
         self.window[-1] = feat
-        if self.filled < WINDOW_SIZE:
+        if self.filled < self.seq_len:
             self.filled += 1
             return 0, 0.0
-        if self.filled < WINDOW_SIZE:
-            return 0, 0.0
 
-        inp = self.window[np.newaxis].astype(np.float32)   # [1, 10, 10]
+        inp = self.window[np.newaxis].astype(np.float32)
         score = float(self.sess.run(["score"], {"input": inp})[0][0])
         self.last_score = score
 
-        if score > self.threshold:
+        # Context-aware threshold: jika cell sedang "quiet" (PRB total rendah,
+        # bukan karena burst), apapun yang anomalous lebih patut dicurigai.
+        # Ini berbasis cell state — bukan identitas attack — sehingga konsisten
+        # dengan tujuan unknown attack detection.
+        prb_total = row["prb_usage_dl_ratio"] + row["prb_usage_ul_ratio"]
+        quiet_cell = (prb_total < 0.05 and row["prb_burst_index"] < 1.0)
+        effective_threshold = self.threshold * 0.65 if quiet_cell else self.threshold
+
+        if score > effective_threshold:
             self.anomaly_cnt += 1
             if self.stage2_start_ms == 0:
                 self.stage2_start_ms = now_ms
@@ -292,6 +395,51 @@ class LSTMDetector:
             sev = 2
         self.severity = sev
         return sev, score
+
+
+def _vote_2of3(buf):
+    """Return True if at least 2 of the 3 booleans in buf are True."""
+    return sum(buf) >= 2
+
+
+class DualLSTMDetector:
+    """
+    Combines two LSTMDetector models with independent 2-of-3 window voting.
+
+    Model A (v16, thresh=0.21): tuned for UL/DL Flood.
+    Model B (v22, thresh=0.50): tuned for RRC Storm.
+
+    Alert fires if either model's vote buffer has ≥2 of last 3 windows above
+    its threshold. Uses raw ONNX scores — ignores LSTMDetector's internal
+    severity/anomaly_cnt.
+    """
+
+    def __init__(self, model_a, thresh_a, model_b, thresh_b,
+                 seq_len=WINDOW_SIZE, num_features=None):
+        self.det_a   = LSTMDetector(model_a, threshold=thresh_a,
+                                    seq_len=seq_len, num_features=num_features)
+        self.det_b   = LSTMDetector(model_b, threshold=thresh_b,
+                                    seq_len=seq_len, num_features=num_features)
+        self.thresh_a = thresh_a
+        self.thresh_b = thresh_b
+        self._buf_a   = [False, False, False]
+        self._buf_b   = [False, False, False]
+
+    def update(self, row, now_ms):
+        """
+        Returns (severity, combined_score, score_a, score_b).
+        severity = 1 if either model votes anomaly, else 0.
+        combined_score = max(score_a, score_b).
+        """
+        _, score_a = self.det_a.update(row, now_ms)
+        _, score_b = self.det_b.update(row, now_ms)
+
+        self._buf_a = self._buf_a[1:] + [score_a > self.thresh_a]
+        self._buf_b = self._buf_b[1:] + [score_b > self.thresh_b]
+
+        vote = _vote_2of3(self._buf_a) or _vote_2of3(self._buf_b)
+        sev  = 1 if vote else 0
+        return sev, max(score_a, score_b), score_a, score_b
 
 
 # ── Main evaluation ───────────────────────────────────────────────────────────
@@ -356,22 +504,23 @@ def _build_eval_json(labels, rule_sev, lstm_sev, final_sev, y_true, csv_path):
 def load_csv(path):
     import csv
     rows = []
+    STR_COLS = {"datetime", "alert_type"}
     with open(path, newline="") as f:
         reader = csv.DictReader(f)
         for r in reader:
-            rows.append({k: float(v) if k not in ("datetime",) else v
+            rows.append({k: float(v) if k not in STR_COLS else v
                          for k, v in r.items()})
     return rows
 
 
-def run_evaluation(csv_path, onnx_path, output_path=None):
+def run_evaluation(csv_path, onnx_path, output_path=None, seq_len=WINDOW_SIZE, num_features=None):
     print(f"Loading dataset: {csv_path}")
     rows = load_csv(csv_path)
     print(f"  {len(rows)} rows, labels: { {int(l): sum(1 for r in rows if int(r['label'])==l) for l in sorted(set(int(r['label']) for r in rows))} }")
 
-    print(f"\nLoading ONNX model: {onnx_path}")
+    print(f"\nLoading ONNX model: {onnx_path}  (seq_len={seq_len})")
     ids  = RuleBasedIDS()
-    lstm = LSTMDetector(onnx_path)
+    lstm = LSTMDetector(onnx_path, seq_len=seq_len, num_features=num_features)
 
     labels      = []
     rule_sev    = []
@@ -520,8 +669,10 @@ def run_evaluation(csv_path, onnx_path, output_path=None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--csv",    default=DEFAULT_CSV,  help="Path ke dataset CSV")
-    parser.add_argument("--model",  default=ONNX_MODEL,   help="Path ke ONNX model")
-    parser.add_argument("--output", default=None,          help="Tulis hasil evaluasi ke JSON (opsional)")
+    parser.add_argument("--csv",     default=DEFAULT_CSV,  help="Path ke dataset CSV")
+    parser.add_argument("--model",   default=ONNX_MODEL,   help="Path ke ONNX model")
+    parser.add_argument("--seq-len", default=WINDOW_SIZE, type=int, help="LSTM window size (default: 10)")
+    parser.add_argument("--output",       default=None, help="Tulis hasil evaluasi ke JSON (opsional)")
+    parser.add_argument("--num-features", default=None, type=int, help="Gunakan N fitur pertama (default: semua 27)")
     args = parser.parse_args()
-    run_evaluation(args.csv, args.model, output_path=args.output)
+    run_evaluation(args.csv, args.model, output_path=args.output, seq_len=args.seq_len, num_features=args.num_features)
