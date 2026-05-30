@@ -1,0 +1,99 @@
+Loading dataset: csv/dataset_attack_mei.csv
+  17941 rows, labels: {0: 8852, 1: 2026, 2: 2012, 3: 3090, 4: 1961}
+
+Dual-LSTM Ensemble  (seq_len=10)
+  Model A: security_model_v16.onnx  thresh=0.21
+  Model B: security_model_v22.onnx  thresh=0.5
+
+=======================================================
+  Rule-Based IDS
+=======================================================
+  Threshold  : Stage1 (any warning)
+  Accuracy   : 0.9812
+  Precision  : 0.9862
+  Recall     : 0.9765
+  F1 Score   : 0.9813
+  ROC AUC    : 0.9812
+  Confusion Matrix (Stage1+):
+    TN= 8728  FP=  124
+    FN=  214  TP= 8875
+  Confusion Matrix (Stage2 only):
+    TN= 8731  FP=  121
+    FN=  401  TP= 8688
+
+=======================================================
+  LSTM Autoencoder
+=======================================================
+  Threshold  : Stage1 (any warning)
+  Accuracy   : 0.8678
+  Precision  : 0.9171
+  Recall     : 0.8126
+  F1 Score   : 0.8617
+  ROC AUC    : 0.8686
+  Confusion Matrix (Stage1+):
+    TN= 8184  FP=  668
+    FN= 1703  TP= 7386
+  Confusion Matrix (Stage2 only):
+    TN= 8852  FP=    0
+    FN= 9089  TP=    0
+
+=======================================================
+  HYBRID (Rule + LSTM, max)
+=======================================================
+  Threshold  : Stage1 (any warning)
+  Accuracy   : 0.9546
+  Precision  : 0.9304
+  Recall     : 0.9839
+  F1 Score   : 0.9564
+  ROC AUC    : 0.9836
+  Confusion Matrix (Stage1+):
+    TN= 8183  FP=  669
+    FN=  146  TP= 8943
+  Confusion Matrix (Stage2 only):
+    TN= 8731  FP=  121
+    FN=  401  TP= 8688
+
+  LSTM ROC AUC (raw score, no threshold): 0.9503
+
+=======================================================
+  Detection Rate Per Label (Hybrid, Stage1+)
+=======================================================
+  Label               Total  S1+Det   S2Det  S1+Rate   S2Rate
+  ----------------------------------------------------------
+  Normal               8852     669     121    7.6%    1.4%
+  UL Flood             2026    2010    1956   99.2%   96.5%
+  DL Flood             2012    2007    1973   99.8%   98.1%
+  Burst ON/OFF         3090    3082    2924   99.7%   94.6%
+  RRC Storm            1961    1844    1835   94.0%   93.6%
+
+=======================================================
+  Detection Breakdown: Rule vs LSTM (Stage1+)
+=======================================================
+  Label                 Rule    LSTM    Both  Either
+  ------------------------------------------------------
+  Normal               1.4%    7.5%    1.4%    7.6%
+  UL Flood            98.7%   83.6%   83.0%   99.2%
+  DL Flood            99.3%   99.8%   99.3%   99.8%
+  Burst ON/OFF        98.2%   64.8%   63.3%   99.7%
+  RRC Storm           94.0%   85.8%   85.8%   94.0%
+
+=======================================================
+  False Positive Rate (Normal traffic mis-detected)
+=======================================================
+  Normal rows      : 8852
+  Rule FP (Stage1+):   124 (1.40%)
+  LSTM FP (Stage1+):   668 (7.55%)
+  Hybrid FP (S1+)  :   669  (7.56%)
+  Hybrid FP (S2)   :   121  (1.37%)
+
+=======================================================
+  LSTM Score Statistics Per Label  (threshold=0.500000)
+=======================================================
+  Label                   Mean       P50       P95       P99  >Thresh
+  ------------------------------------------------------------------
+  Normal              0.264906  0.085112  0.364211  2.878445    3.4%
+  UL Flood            0.214688  0.211785  0.212282  0.322378    0.9%
+  DL Flood            1.551467  1.251067  3.384621  5.880725   99.8%
+  Burst ON/OFF        1.123744  0.302067  4.503877  8.674684   41.3%
+  RRC Storm          14.324857 16.011684 31.740597 35.433504   85.8%
+
