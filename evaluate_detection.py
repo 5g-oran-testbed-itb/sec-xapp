@@ -514,14 +514,22 @@ def load_csv(path):
     return rows
 
 
-def run_evaluation(csv_path, onnx_path, output_path=None, seq_len=WINDOW_SIZE, num_features=None):
+def run_evaluation(csv_path, onnx_path, output_path=None, seq_len=WINDOW_SIZE, num_features=None,
+                   dual=False, model_a=None, thresh_a=0.21, model_b=None, thresh_b=0.5):
     print(f"Loading dataset: {csv_path}")
     rows = load_csv(csv_path)
     print(f"  {len(rows)} rows, labels: { {int(l): sum(1 for r in rows if int(r['label'])==l) for l in sorted(set(int(r['label']) for r in rows))} }")
 
-    print(f"\nLoading ONNX model: {onnx_path}  (seq_len={seq_len})")
-    ids  = RuleBasedIDS()
-    lstm = LSTMDetector(onnx_path, seq_len=seq_len, num_features=num_features)
+    ids = RuleBasedIDS()
+    if dual:
+        print(f"\nDual-LSTM Ensemble  (seq_len={seq_len})")
+        print(f"  Model A: {model_a}  thresh={thresh_a}")
+        print(f"  Model B: {model_b}  thresh={thresh_b}")
+        lstm = DualLSTMDetector(model_a, thresh_a, model_b, thresh_b,
+                                seq_len=seq_len, num_features=num_features)
+    else:
+        print(f"\nLoading ONNX model: {onnx_path}  (seq_len={seq_len})")
+        lstm = LSTMDetector(onnx_path, seq_len=seq_len, num_features=num_features)
 
     labels      = []
     rule_sev    = []
@@ -533,8 +541,10 @@ def run_evaluation(csv_path, onnx_path, output_path=None, seq_len=WINDOW_SIZE, n
         now_ms  = int(r["timestamp_ms"])
         label   = int(r["label"])
         rsev, _ = ids.detect(r, now_ms)
-        lsev, score = lstm.update(r, now_ms)
-        fsev = max(rsev, lsev)
+        result  = lstm.update(r, now_ms)
+        lsev    = result[0]
+        score   = result[1]
+        fsev    = max(rsev, lsev)
 
         labels.append(label)
         rule_sev.append(rsev)
@@ -670,10 +680,23 @@ def run_evaluation(csv_path, onnx_path, output_path=None, seq_len=WINDOW_SIZE, n
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--csv",     default=DEFAULT_CSV,  help="Path ke dataset CSV")
-    parser.add_argument("--model",   default=ONNX_MODEL,   help="Path ke ONNX model")
-    parser.add_argument("--seq-len", default=WINDOW_SIZE, type=int, help="LSTM window size (default: 10)")
-    parser.add_argument("--output",       default=None, help="Tulis hasil evaluasi ke JSON (opsional)")
-    parser.add_argument("--num-features", default=None, type=int, help="Gunakan N fitur pertama (default: semua 27)")
+    parser.add_argument("--csv",          default=DEFAULT_CSV,  help="Path ke dataset CSV")
+    parser.add_argument("--model",        default=ONNX_MODEL,   help="Path ke ONNX model (single mode)")
+    parser.add_argument("--seq-len",      default=WINDOW_SIZE,  type=int,   help="LSTM window size (default: 10)")
+    parser.add_argument("--output",       default=None,                     help="Tulis hasil evaluasi ke JSON (opsional)")
+    parser.add_argument("--num-features", default=None,          type=int,   help="Gunakan N fitur pertama (default: semua 27)")
+    parser.add_argument("--dual",         action="store_true",              help="Pakai DualLSTMDetector (model-a + model-b)")
+    parser.add_argument("--model-a",      default="security_model_v16.onnx", help="ONNX model A (default: v16)")
+    parser.add_argument("--thresh-a",     default=0.21,          type=float, help="Threshold model A (default: 0.21)")
+    parser.add_argument("--model-b",      default="security_model_v22.onnx", help="ONNX model B (default: v22)")
+    parser.add_argument("--thresh-b",     default=0.5,           type=float, help="Threshold model B (default: 0.5)")
     args = parser.parse_args()
-    run_evaluation(args.csv, args.model, output_path=args.output, seq_len=args.seq_len, num_features=args.num_features)
+    run_evaluation(
+        args.csv, args.model,
+        output_path=args.output,
+        seq_len=args.seq_len,
+        num_features=args.num_features,
+        dual=args.dual,
+        model_a=args.model_a, thresh_a=args.thresh_a,
+        model_b=args.model_b, thresh_b=args.thresh_b,
+    )
