@@ -327,6 +327,7 @@ class LSTMDetector:
         self.sess      = ort.InferenceSession(model_path)
         self.threshold = threshold
         self.seq_len   = seq_len
+        self.FEATURES  = list(self.FEATURES)
         if num_features is not None and num_features < len(self.FEATURES):
             self.FEATURES = self.FEATURES[:num_features]
         self.window    = np.zeros((seq_len, len(self.FEATURES)), dtype=np.float32)
