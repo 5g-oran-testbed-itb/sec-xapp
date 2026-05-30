@@ -536,6 +536,8 @@ def run_evaluation(csv_path, onnx_path, output_path=None, seq_len=WINDOW_SIZE, n
     lstm_sev    = []
     final_sev   = []
     lstm_scores = []
+    scores_a    = [] if dual else None
+    scores_b    = [] if dual else None
 
     for r in rows:
         now_ms  = int(r["timestamp_ms"])
@@ -551,6 +553,9 @@ def run_evaluation(csv_path, onnx_path, output_path=None, seq_len=WINDOW_SIZE, n
         lstm_sev.append(lsev)
         final_sev.append(fsev)
         lstm_scores.append(score)
+        if dual:
+            scores_a.append(result[2])
+            scores_b.append(result[3])
 
     labels    = np.array(labels)
     rule_sev  = np.array(rule_sev)
@@ -667,6 +672,29 @@ def run_evaluation(csv_path, onnx_path, output_path=None, seq_len=WINDOW_SIZE, n
               f"{sc.mean():>9.6f} {np.percentile(sc,50):>9.6f} "
               f"{np.percentile(sc,95):>9.6f} {np.percentile(sc,99):>9.6f} "
               f"{above/len(sc):>7.1%}")
+
+    if dual:
+        scores_a = np.array(scores_a)
+        scores_b = np.array(scores_b)
+        for model_tag, sc_arr, thresh in [
+            (f"Model-A v16 (thresh={thresh_a})", scores_a, thresh_a),
+            (f"Model-B v22 (thresh={thresh_b})", scores_b, thresh_b),
+        ]:
+            print(f"\n{'='*55}")
+            print(f"  {model_tag} Score Statistics Per Label")
+            print(f"{'='*55}")
+            print(f"  {'Label':<18} {'Mean':>9} {'P50':>9} {'P95':>9} {'P99':>9} {'>Thresh':>8}")
+            print(f"  {'-'*66}")
+            for lbl in sorted(LABEL_NAMES):
+                mask = labels == lbl
+                if mask.sum() == 0:
+                    continue
+                sc    = sc_arr[mask]
+                above = (sc > thresh).sum()
+                print(f"  {LABEL_NAMES[lbl]:<18} "
+                      f"{sc.mean():>9.6f} {np.percentile(sc,50):>9.6f} "
+                      f"{np.percentile(sc,95):>9.6f} {np.percentile(sc,99):>9.6f} "
+                      f"{above/len(sc):>7.1%}")
 
     if output_path:
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
