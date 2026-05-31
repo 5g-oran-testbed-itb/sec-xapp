@@ -325,6 +325,15 @@ def main():
         scaler.data_range_[rach_idx] = 6.0 - scaler.data_min_[rach_idx]
         scaler.scale_[rach_idx]      = 1.0 / scaler.data_range_[rach_idx]
 
+        # Clamp zero-range features to avoid NaN in transform() — mirrors export_onnx.py.
+        # Happens when a feature is constant-zero in benign data (e.g. rach_roll_mean,
+        # rach_cqi_joint). The feature normalizes to 0 everywhere; attack scores diverge.
+        _MIN_RANGE = 1e-8
+        for _i in range(len(scaler.data_range_)):
+            if scaler.data_range_[_i] < _MIN_RANGE:
+                scaler.data_range_[_i] = _MIN_RANGE
+                scaler.scale_[_i]      = 1.0 / _MIN_RANGE
+
         train_norm = scaler.transform(train_raw)
         val_norm   = scaler.transform(val_raw)
 
@@ -341,6 +350,11 @@ def main():
         scaler.data_max_[rach_idx]   = 6.0
         scaler.data_range_[rach_idx] = 6.0 - scaler.data_min_[rach_idx]
         scaler.scale_[rach_idx]      = 1.0 / scaler.data_range_[rach_idx]
+        _MIN_RANGE = 1e-8
+        for _i in range(len(scaler.data_range_)):
+            if scaler.data_range_[_i] < _MIN_RANGE:
+                scaler.data_range_[_i] = _MIN_RANGE
+                scaler.scale_[_i]      = 1.0 / _MIN_RANGE
         norm = scaler.transform(raw)
         split = int(len(norm) * 0.8)
         train_norm = norm[:split]
