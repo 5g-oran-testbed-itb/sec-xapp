@@ -315,24 +315,24 @@ def main():
         val_raw   = df_val[FEATURE_NAMES].values
         scaler.fit(train_raw)
 
-        # Override rach_preamble (idx 3) ke domain-known max=6.
-        # Training data hanya melihat RACH 0-1 (benign), sehingga scaler
-        # tidak tahu RACH bisa spike ke 6 saat serangan. Tanpa koreksi ini,
-        # RACH=6 akan dinormalisasi ke 6.0 lalu di-clip ke 1.0 — sama dengan
-        # RACH=1, sehingga fitur ini kehilangan discriminative power.
-        rach_idx = FEATURE_NAMES.index('rach_preamble')
-        scaler.data_max_[rach_idx]   = 6.0
-        scaler.data_range_[rach_idx] = 6.0 - scaler.data_min_[rach_idx]
-        scaler.scale_[rach_idx]      = 1.0 / scaler.data_range_[rach_idx]
-
-        # Clamp zero-range features to avoid NaN in transform() — mirrors export_onnx.py.
-        # Happens when a feature is constant-zero in benign data (e.g. rach_roll_mean,
-        # rach_cqi_joint). The feature normalizes to 0 everywhere; attack scores diverge.
-        _MIN_RANGE = 1e-8
-        for _i in range(len(scaler.data_range_)):
-            if scaler.data_range_[_i] < _MIN_RANGE:
-                scaler.data_range_[_i] = _MIN_RANGE
-                scaler.scale_[_i]      = 1.0 / _MIN_RANGE
+        # Override domain-known maxima for RACH-derived features.
+        # Benign training data sees RACH≈0 (idle) or RACH≤1 (active-normal reconnects).
+        # Without override, scaler range is tiny → scale=1e8 → normalized values 1e7+
+        # → exploding gradients → NaN loss.  Domain max=6 for all RACH-derived features
+        # because rach_preamble is bounded [0,6] by protocol.
+        # rach_cqi_joint = rach * (1 - cqi/15), max when rach=6,cqi=0 → 6.0
+        _RACH_DOMAIN_MAX = 6.0
+        for _fname, _dmax in [
+            ('rach_preamble',      _RACH_DOMAIN_MAX),
+            ('rach_roll_mean',     _RACH_DOMAIN_MAX),
+            ('rach_roll_max_30',   _RACH_DOMAIN_MAX),
+            ('rach_cqi_joint',     _RACH_DOMAIN_MAX),
+        ]:
+            if _fname in FEATURE_NAMES:
+                _fi = FEATURE_NAMES.index(_fname)
+                scaler.data_max_[_fi]   = _dmax
+                scaler.data_range_[_fi] = _dmax - scaler.data_min_[_fi]
+                scaler.scale_[_fi]      = 1.0 / scaler.data_range_[_fi]
 
         train_norm = scaler.transform(train_raw)
         val_norm   = scaler.transform(val_raw)
@@ -346,15 +346,17 @@ def main():
         raw = df[FEATURE_NAMES].values
         scaler = MinMaxScaler()
         scaler.fit(raw)
-        rach_idx = FEATURE_NAMES.index('rach_preamble')
-        scaler.data_max_[rach_idx]   = 6.0
-        scaler.data_range_[rach_idx] = 6.0 - scaler.data_min_[rach_idx]
-        scaler.scale_[rach_idx]      = 1.0 / scaler.data_range_[rach_idx]
-        _MIN_RANGE = 1e-8
-        for _i in range(len(scaler.data_range_)):
-            if scaler.data_range_[_i] < _MIN_RANGE:
-                scaler.data_range_[_i] = _MIN_RANGE
-                scaler.scale_[_i]      = 1.0 / _MIN_RANGE
+        for _fname, _dmax in [
+            ('rach_preamble',      6.0),
+            ('rach_roll_mean',     6.0),
+            ('rach_roll_max_30',   6.0),
+            ('rach_cqi_joint',     6.0),
+        ]:
+            if _fname in FEATURE_NAMES:
+                _fi = FEATURE_NAMES.index(_fname)
+                scaler.data_max_[_fi]   = _dmax
+                scaler.data_range_[_fi] = _dmax - scaler.data_min_[_fi]
+                scaler.scale_[_fi]      = 1.0 / scaler.data_range_[_fi]
         norm = scaler.transform(raw)
         split = int(len(norm) * 0.8)
         train_norm = norm[:split]
