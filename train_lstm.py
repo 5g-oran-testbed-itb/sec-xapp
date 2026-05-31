@@ -55,40 +55,38 @@ def load_csv(pattern_or_paths, label_filter: int = 0) -> pd.DataFrame:
 
 
 def _add_computed_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Hitung fitur yang tidak ada di CSV lama — aman dipanggil berulang."""
+    """Hitung / isi fitur yang hilang atau NaN — aman dipanggil berulang.
+
+    Ketika beberapa CSV digabung (pd.concat), CSV baru mungkin tidak punya kolom
+    yang sudah ada di CSV lama, sehingga baris baru menjadi NaN.  Fungsi ini
+    mengisi NaN tersebut menggunakan formula yang sudah diverifikasi.
+    """
     df = df.copy()
     EPS = 1e-6
     W10 = 10
+
+    def _fill(col, formula):
+        """Assign formula ke col; jika col sudah ada, hanya isi NaN-nya."""
+        if col not in df.columns or df[col].isna().any():
+            computed = formula()
+            if col not in df.columns:
+                df[col] = computed
+            else:
+                df[col] = df[col].fillna(computed)
+
     # long-window rolling features
-    if 'rach_roll_max_30' not in df.columns:
-        df['rach_roll_max_30'] = df['rach_preamble'].rolling(30, min_periods=1).max()
-    if 'empty_ind_roll_sum_30' not in df.columns:
-        df['empty_ind_roll_sum_30'] = df['empty_ind_rate'].rolling(30, min_periods=1).sum()
+    _fill('rach_roll_max_30',    lambda: df['rach_preamble'].rolling(30, min_periods=1).max())
+    _fill('empty_ind_roll_sum_30', lambda: df['empty_ind_rate'].rolling(30, min_periods=1).sum())
     # CV features
-    if 'prb_dl_roll_cv' not in df.columns:
-        df['prb_dl_roll_cv'] = df['prb_dl_roll_std'] / (df['prb_dl_roll_mean'] + EPS)
-    if 'prb_ul_roll_cv' not in df.columns:
-        ul_roll_mean = df['prb_usage_ul_ratio'].rolling(W10, min_periods=1).mean()
-        df['prb_ul_roll_cv'] = df['prb_ul_roll_std'] / (ul_roll_mean + EPS)
+    _fill('prb_dl_roll_cv',     lambda: df['prb_dl_roll_std'] / (df['prb_dl_roll_mean'] + EPS))
+    _fill('prb_ul_roll_cv',     lambda: df['prb_ul_roll_std'] / (df['prb_usage_ul_ratio'].rolling(W10, min_periods=1).mean() + EPS))
     # discriminative features — verified formulas against dataset_attack_mei.csv
-    if 'cqi_roll_std' not in df.columns:
-        df['cqi_roll_std'] = df['cqi'].rolling(W10, min_periods=1).std(ddof=0).fillna(0)
-    if 'rach_roll_mean' not in df.columns:
-        df['rach_roll_mean'] = df['rach_preamble'].rolling(W10, min_periods=1).mean()
-    if 'prb_ul_near_zero_rate' not in df.columns:
-        # < 6/106 PRBs UL — verified threshold against attack dataset
-        df['prb_ul_near_zero_rate'] = (
-            df['prb_usage_ul_ratio'] < 6/106
-        ).rolling(W10, min_periods=1).mean()
-    if 'prb_peak_drop' not in df.columns:
-        # rolling max over 100ts minus current UL — verified against attack dataset
-        df['prb_peak_drop'] = df['prb_ul_roll_max_100'] - df['prb_usage_ul_ratio']
-    if 'rach_cqi_joint' not in df.columns:
-        df['rach_cqi_joint'] = df['rach_preamble'] * (1.0 - df['cqi'] / 15.0)
-    if 'prb_dl_ul_asym' not in df.columns:
-        # exact formula unknown; |dl-ul|/(dl+ul+eps) is approx — dominated by 60K main training rows
-        dl = df['prb_usage_dl_ratio']; ul = df['prb_usage_ul_ratio']
-        df['prb_dl_ul_asym'] = (dl - ul).abs() / (dl + ul + EPS)
+    _fill('cqi_roll_std',         lambda: df['cqi'].rolling(W10, min_periods=1).std(ddof=0).fillna(0))
+    _fill('rach_roll_mean',       lambda: df['rach_preamble'].rolling(W10, min_periods=1).mean())
+    _fill('prb_ul_near_zero_rate', lambda: (df['prb_usage_ul_ratio'] < 6/106).rolling(W10, min_periods=1).mean())
+    _fill('prb_peak_drop',        lambda: df['prb_ul_roll_max_100'] - df['prb_usage_ul_ratio'])
+    _fill('rach_cqi_joint',       lambda: df['rach_preamble'] * (1.0 - df['cqi'] / 15.0))
+    _fill('prb_dl_ul_asym',       lambda: (df['prb_usage_dl_ratio'] - df['prb_usage_ul_ratio']).abs() / (df['prb_usage_dl_ratio'] + df['prb_usage_ul_ratio'] + EPS))
     return df
 
 
@@ -145,6 +143,7 @@ def train_with_val(model: LSTMAutoencoder, trainer: ModelTrainer,
             out  = model(batch)
             loss = weighted_mse(out, batch, feat_weights)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             trainer.optimizer.step()
             epoch_loss += loss.item()
             n_batches  += 1
