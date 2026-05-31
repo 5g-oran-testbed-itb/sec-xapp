@@ -11,19 +11,34 @@ import torch
 from sklearn.preprocessing import MinMaxScaler
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from src.detection.lstm_autoencoder import LSTMAutoencoder, ModelTrainer
-from src.detection.feature_schema import FEATURE_NAMES
+from src.detection.lstm_autoencoder import LSTMAutoencoder, ModelTrainer, LSTMVariationalAutoencoder
+from src.detection.feature_schema import FEATURE_NAMES, FEATURE_WEIGHTS as _FW_DICT
+
+# Build weight tensor dari FEATURE_WEIGHTS dict di feature_schema.py
+_FEATURE_WEIGHTS = torch.tensor(
+    [_FW_DICT.get(n, 1.0) for n in FEATURE_NAMES], dtype=torch.float32
+)
 
 
-def load_csv(pattern_or_path: str, label_filter: int = 0) -> pd.DataFrame:
-    paths = glob.glob(pattern_or_path)
+def load_csv(pattern_or_paths, label_filter: int = 0) -> pd.DataFrame:
+    if isinstance(pattern_or_paths, str):
+        pattern_or_paths = [pattern_or_paths]
+    paths = []
+    for p in pattern_or_paths:
+        matched = glob.glob(p)
+        if matched:
+            paths.extend(matched)
+        else:
+            print(f"  [WARN] tidak ada file cocok: {p}")
     if not paths:
-        print(f"Error: tidak ada file yang cocok: {pattern_or_path}")
+        print(f"Error: tidak ada file yang cocok dari: {pattern_or_paths}")
         sys.exit(1)
+    paths = sorted(set(paths))
     dfs = []
-    for p in sorted(paths):
+    for p in paths:
         try:
             dfs.append(pd.read_csv(p))
+            print(f"  Loaded: {p}")
         except Exception as e:
             print(f"  Gagal baca {p}: {e}")
     df = pd.concat(dfs, ignore_index=True)
@@ -31,10 +46,49 @@ def load_csv(pattern_or_path: str, label_filter: int = 0) -> pd.DataFrame:
         before = len(df)
         df = df[df['label'] == label_filter]
         print(f"  Filter label={label_filter}: {before} → {len(df)} baris")
+    df = _add_computed_features(df)
     for f in FEATURE_NAMES:
         if f not in df.columns:
             print(f"Error: kolom '{f}' tidak ada. Pastikan CSV dari xapp_sec_moni terbaru.")
             sys.exit(1)
+    return df
+
+
+def _add_computed_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Hitung fitur yang tidak ada di CSV lama — aman dipanggil berulang."""
+    df = df.copy()
+    EPS = 1e-6
+    W10 = 10
+    # long-window rolling features
+    if 'rach_roll_max_30' not in df.columns:
+        df['rach_roll_max_30'] = df['rach_preamble'].rolling(30, min_periods=1).max()
+    if 'empty_ind_roll_sum_30' not in df.columns:
+        df['empty_ind_roll_sum_30'] = df['empty_ind_rate'].rolling(30, min_periods=1).sum()
+    # CV features
+    if 'prb_dl_roll_cv' not in df.columns:
+        df['prb_dl_roll_cv'] = df['prb_dl_roll_std'] / (df['prb_dl_roll_mean'] + EPS)
+    if 'prb_ul_roll_cv' not in df.columns:
+        ul_roll_mean = df['prb_usage_ul_ratio'].rolling(W10, min_periods=1).mean()
+        df['prb_ul_roll_cv'] = df['prb_ul_roll_std'] / (ul_roll_mean + EPS)
+    # discriminative features — verified formulas against dataset_attack_mei.csv
+    if 'cqi_roll_std' not in df.columns:
+        df['cqi_roll_std'] = df['cqi'].rolling(W10, min_periods=1).std(ddof=0).fillna(0)
+    if 'rach_roll_mean' not in df.columns:
+        df['rach_roll_mean'] = df['rach_preamble'].rolling(W10, min_periods=1).mean()
+    if 'prb_ul_near_zero_rate' not in df.columns:
+        # < 6/106 PRBs UL — verified threshold against attack dataset
+        df['prb_ul_near_zero_rate'] = (
+            df['prb_usage_ul_ratio'] < 6/106
+        ).rolling(W10, min_periods=1).mean()
+    if 'prb_peak_drop' not in df.columns:
+        # rolling max over 100ts minus current UL — verified against attack dataset
+        df['prb_peak_drop'] = df['prb_ul_roll_max_100'] - df['prb_usage_ul_ratio']
+    if 'rach_cqi_joint' not in df.columns:
+        df['rach_cqi_joint'] = df['rach_preamble'] * (1.0 - df['cqi'] / 15.0)
+    if 'prb_dl_ul_asym' not in df.columns:
+        # exact formula unknown; |dl-ul|/(dl+ul+eps) is approx — dominated by 60K main training rows
+        dl = df['prb_usage_dl_ratio']; ul = df['prb_usage_ul_ratio']
+        df['prb_dl_ul_asym'] = (dl - ul).abs() / (dl + ul + EPS)
     return df
 
 
@@ -43,16 +97,24 @@ def prepare_sequences(data: np.ndarray, seq_len: int = 10) -> np.ndarray:
     return np.array(seqs, dtype=np.float32)
 
 
+def weighted_mse(output: torch.Tensor, target: torch.Tensor,
+                 weights: torch.Tensor) -> torch.Tensor:
+    """MSE loss dengan bobot per-fitur (weights shape: [n_features])."""
+    err = (output - target) ** 2          # (batch, seq_len, n_features)
+    err = (err * weights).mean()          # scalar — broadcast otomatis
+    return err
+
+
 def compute_val_loss(model: LSTMAutoencoder, val_seqs: np.ndarray,
                      batch_size: int = 256) -> float:
-    criterion = torch.nn.MSELoss()
     model.eval()
     total, count = 0.0, 0
     with torch.no_grad():
         for i in range(0, len(val_seqs), batch_size):
             batch = torch.FloatTensor(val_seqs[i:i+batch_size])
             out  = model(batch)
-            total += criterion(out, batch).item() * len(batch)
+            # val loss unweighted agar sebanding dengan threshold
+            total += torch.nn.functional.mse_loss(out, batch).item() * len(batch)
             count += len(batch)
     return total / count if count else 0.0
 
@@ -60,19 +122,19 @@ def compute_val_loss(model: LSTMAutoencoder, val_seqs: np.ndarray,
 def train_with_val(model: LSTMAutoencoder, trainer: ModelTrainer,
                    train_data: np.ndarray, val_seqs: np.ndarray,
                    epochs: int, batch_size: int):
-    """Train dan hitung val_loss setiap epoch."""
+    """Train dengan weighted MSE; val_loss dihitung unweighted."""
     seq_len = model.seq_len
     train_seqs = prepare_sequences(train_data, seq_len)
     dataset    = torch.utils.data.TensorDataset(torch.FloatTensor(train_seqs))
     loader     = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    criterion  = torch.nn.MSELoss()
+    feat_weights = _FEATURE_WEIGHTS  # (n_features,) broadcast ke (batch, seq_len, n_features)
 
     train_losses, val_losses = [], []
     best_val_loss   = float('inf')
     best_state      = None
     best_epoch      = 0
 
-    print(f"[Trainer] Mulai training {epochs} epochs...")
+    print(f"[Trainer] Mulai training {epochs} epochs  seq_len={seq_len}...")
     print(f"[Trainer] Train seqs: {len(train_seqs):,}  |  Val seqs: {len(val_seqs):,}")
 
     for epoch in range(1, epochs + 1):
@@ -81,7 +143,7 @@ def train_with_val(model: LSTMAutoencoder, trainer: ModelTrainer,
         for (batch,) in loader:
             trainer.optimizer.zero_grad()
             out  = model(batch)
-            loss = criterion(out, batch)
+            loss = weighted_mse(out, batch, feat_weights)
             loss.backward()
             trainer.optimizer.step()
             epoch_loss += loss.item()
@@ -115,10 +177,72 @@ def train_with_val(model: LSTMAutoencoder, trainer: ModelTrainer,
     return train_losses, val_losses, best_epoch
 
 
+def train_vae(model: LSTMVariationalAutoencoder, train_data: np.ndarray,
+              val_seqs: np.ndarray, epochs: int, batch_size: int,
+              lr: float, beta: float):
+    """Training loop untuk VAE dengan β warmup (cegah posterior collapse)."""
+    seq_len    = model.seq_len
+    train_seqs = prepare_sequences(train_data, seq_len)
+    dataset    = torch.utils.data.TensorDataset(torch.FloatTensor(train_seqs))
+    loader     = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    optimizer  = torch.optim.Adam(model.parameters(), lr=lr)
+
+    train_losses, val_losses = [], []
+    best_val, best_state, best_epoch = float('inf'), None, 0
+
+    print(f"[VAE] Mulai training {epochs} epochs  β={beta}  seq_len={seq_len}")
+    print(f"[VAE] Train seqs: {len(train_seqs):,}  |  Val seqs: {len(val_seqs):,}")
+
+    for epoch in range(1, epochs + 1):
+        # β warmup: 0 → beta selama 30 epoch pertama (cegah posterior collapse)
+        beta_now = beta * min(1.0, epoch / 30.0)
+
+        model.train()
+        t_loss_sum, n_batches = 0.0, 0
+        for (batch,) in loader:
+            optimizer.zero_grad()
+            recon, mu, logvar = model(batch)
+            loss, _, _ = model.elbo_loss(batch, recon, mu, logvar, beta=beta_now)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+            t_loss_sum += loss.item()
+            n_batches  += 1
+        t_loss = t_loss_sum / n_batches
+
+        # Val loss (unweighted recon only untuk konsistensi perbandingan)
+        model.eval()
+        v_loss_sum, v_count = 0.0, 0
+        with torch.no_grad():
+            for i in range(0, len(val_seqs), 256):
+                b = torch.FloatTensor(val_seqs[i:i+256])
+                r, mu, lv = model(b)
+                v_loss_sum += torch.nn.functional.mse_loss(r, b).item() * len(b)
+                v_count    += len(b)
+        v_loss = v_loss_sum / v_count
+
+        train_losses.append(t_loss)
+        val_losses.append(v_loss)
+        if v_loss < best_val:
+            best_val   = v_loss
+            best_state = {k: v.clone() for k, v in model.state_dict().items()}
+            best_epoch = epoch
+
+        if epoch % 10 == 0:
+            print(f"  Epoch {epoch:3d}/{epochs}  train={t_loss:.6f}  val={v_loss:.6f}  β={beta_now:.4f}"
+                  f"{'  ← best' if epoch == best_epoch else ''}")
+
+    if best_state:
+        model.load_state_dict(best_state)
+        print(f"[VAE] Best checkpoint: epoch {best_epoch} (val={best_val:.6f})")
+
+    return train_losses, val_losses, best_epoch
+
+
 def main():
     parser = argparse.ArgumentParser(description="Train LSTM-Autoencoder (train+val mode)")
     # Mode baru: pisah train/val
-    parser.add_argument("--train", type=str, default=None, help="CSV training (benign)")
+    parser.add_argument("--train", type=str, nargs='+', default=None, help="CSV training (benign), bisa multiple file/glob")
     parser.add_argument("--val",   type=str, default=None, help="CSV validation (benign)")
     # Mode lama (backward compat)
     parser.add_argument("--csv",   type=str, default=None, help="[Lama] CSV tunggal — split 80/20 internal")
@@ -128,16 +252,60 @@ def main():
     parser.add_argument("--lr",          type=float, default=0.001)
     parser.add_argument("--model-out",   type=str,   default="models/lstm_autoencoder_v2.pt",
                         help="Path simpan model baru")
+    parser.add_argument("--threshold-percentile", type=float, default=99.0,
+                        help="Percentile untuk threshold deteksi dari val set (default: 99.0)")
+    parser.add_argument("--seq-len", type=int, default=10,
+                        help="Panjang sequence LSTM (default: 10)")
+    parser.add_argument("--num-features", type=int, default=None,
+                        help="Gunakan N fitur pertama dari FEATURE_NAMES (default: semua). "
+                             "Contoh: --num-features 25 untuk skip CV features terakhir.")
+    parser.add_argument("--vae", action="store_true",
+                        help="Gunakan VAE (Variational Autoencoder) — default: plain AE")
+    parser.add_argument("--beta", type=float, default=0.01,
+                        help="Bobot KL divergence untuk VAE (default: 0.01)")
+    parser.add_argument("--clean-dl-thresh", type=float, default=0.7,
+                        help="Hapus baris training dengan prb_dl_roll_mean > nilai ini (default: 0.7). "
+                             "Set 1.0 untuk nonaktif.")
+    parser.add_argument("--clean-ul-thresh", type=float, default=0.5,
+                        help="Hapus baris training dengan prb_ul_roll_max > nilai ini (default: 0.5). "
+                             "Mencegah LSTM belajar pola UL jenuh sebagai 'normal'. Set 1.0 untuk nonaktif.")
     args = parser.parse_args()
 
     os.makedirs('models', exist_ok=True)
-    seq_len = 10
+    seq_len = args.seq_len
+
+    # Potong feature list jika --num-features diset
+    global FEATURE_NAMES, _FEATURE_WEIGHTS
+    if args.num_features is not None and args.num_features < len(FEATURE_NAMES):
+        FEATURE_NAMES = FEATURE_NAMES[:args.num_features]
+        _FEATURE_WEIGHTS = torch.tensor(
+            [_FW_DICT.get(n, 1.0) for n in FEATURE_NAMES], dtype=torch.float32
+        )
+        print(f"[*] num_features={args.num_features}: pakai {FEATURE_NAMES}")
 
     # ── Muat data ────────────────────────────────────────────────
     if args.train and args.val:
         print(f"[*] Mode: train/val terpisah")
         print(f"[*] Loading training CSV: {args.train}")
         df_train = load_csv(args.train)
+
+        # Hapus baris normal yang punya pola DL jenuh (mirip DL Flood).
+        # 1,511 baris (~2.5%) di training normal memiliki prb_dl_roll_mean>0.7
+        # dengan distribusi identik ke DL Flood → LSTM belajar pola ini sebagai normal.
+        if args.clean_dl_thresh < 1.0 and 'prb_dl_roll_mean' in df_train.columns:
+            before = len(df_train)
+            df_train = df_train[df_train['prb_dl_roll_mean'] <= args.clean_dl_thresh]
+            removed = before - len(df_train)
+            print(f"[*] Clean DL: hapus {removed} baris (prb_dl_roll_mean > {args.clean_dl_thresh}) "
+                  f"→ {len(df_train)} baris tersisa")
+
+        if args.clean_ul_thresh < 1.0 and 'prb_ul_roll_max' in df_train.columns:
+            before = len(df_train)
+            df_train = df_train[df_train['prb_ul_roll_max'] <= args.clean_ul_thresh]
+            removed = before - len(df_train)
+            print(f"[*] Clean UL: hapus {removed} baris (prb_ul_roll_max > {args.clean_ul_thresh}) "
+                  f"→ {len(df_train)} baris tersisa")
+
         print(f"[*] Loading validation CSV: {args.val}")
         df_val   = load_csv(args.val)
 
@@ -160,8 +328,8 @@ def main():
         train_norm = scaler.transform(train_raw)
         val_norm   = scaler.transform(val_raw)
 
-        print(f"[*] Train: {len(train_norm):,} baris → {len(train_norm)-seq_len+1:,} sequences")
-        print(f"[*] Val:   {len(val_norm):,} baris → {len(val_norm)-seq_len+1:,} sequences")
+        print(f"[*] seq_len={seq_len}  Train: {len(train_norm):,} baris → {len(train_norm)-seq_len+1:,} sequences")
+        print(f"[*] seq_len={seq_len}  Val:   {len(val_norm):,} baris → {len(val_norm)-seq_len+1:,} sequences")
 
     elif args.csv:
         print(f"[*] Mode: CSV tunggal split 80/20 (backward compat)")
@@ -195,6 +363,7 @@ def main():
             'encoder_hidden': [64, 32],
             'decoder_hidden': [32, 64],
             'latent_dim': 32,
+            'bidirectional': False,
             'learning_rate': args.lr,
             'epochs': args.epochs,
             'batch_size': args.batch_size,
@@ -205,54 +374,96 @@ def main():
         }
     }
 
-    model   = LSTMAutoencoder(config)
-    trainer = ModelTrainer(model, config)
-
     val_seqs = prepare_sequences(val_norm, seq_len)
 
-    # ── Training ─────────────────────────────────────────────────
-    train_losses, val_losses, best_epoch = train_with_val(
-        model, trainer, train_norm, val_seqs,
-        epochs=args.epochs, batch_size=args.batch_size
-    )
+    if args.vae:
+        # ── VAE path ─────────────────────────────────────────────
+        model = LSTMVariationalAutoencoder(config)
+        print(f"[*] Mode: LSTM-VAE  β={args.beta}")
 
-    # ── Simpan model ─────────────────────────────────────────────
-    model.save(args.model_out)
+        train_losses, val_losses, best_epoch = train_vae(
+            model, train_norm, val_seqs,
+            epochs=args.epochs, batch_size=args.batch_size,
+            lr=args.lr, beta=args.beta,
+        )
 
-    # Simpan loss history untuk plotting
-    losses_path = args.model_out.replace('.pt', '_losses.json')
-    with open(losses_path, 'w') as f:
-        json.dump({'train': train_losses, 'val': val_losses, 'best_epoch': best_epoch}, f)
-    print(f"[*] Loss history: {losses_path}")
+        model.save(args.model_out)
 
-    # ── Hitung reconstruction errors & threshold dari val set ────
-    model.eval()
-    with torch.no_grad():
+        losses_path = args.model_out.replace('.pt', '_losses.json')
+        with open(losses_path, 'w') as f:
+            json.dump({'train': train_losses, 'val': val_losses, 'best_epoch': best_epoch}, f)
+        print(f"[*] Loss history: {losses_path}")
+
+        # Anomaly scores dari val set (recon + β*KL) untuk threshold
+        model.eval()
         val_tensor = torch.FloatTensor(val_seqs)
-        val_errors = model.compute_reconstruction_error(val_tensor).numpy()
+        val_scores = model.compute_anomaly_scores(val_tensor, beta_inf=args.beta).numpy()
 
-    mu_val     = float(np.mean(val_errors))
-    std_val    = float(np.std(val_errors))
-    percentile = 99.0
-    thresh_val = float(np.percentile(val_errors, percentile))
-    fpr_val    = float(np.mean(val_errors > thresh_val) * 100)
+        mu_val     = float(np.mean(val_scores))
+        std_val    = float(np.std(val_scores))
+        percentile = args.threshold_percentile
+        thresh_val = float(np.percentile(val_scores, percentile))
+        fpr_val    = float(np.mean(val_scores > thresh_val) * 100)
 
-    # Update model threshold dengan nilai dari validation set
-    model.fit_threshold(val_errors, percentile)
+        model.fit_threshold(val_scores, percentile)
 
-    # Simpan threshold dari validation (lebih valid, distribution-free)
-    threshold_path = args.model_out.replace('.pt', '_threshold.json')
-    with open(threshold_path, 'w') as f:
-        json.dump({
-            'mu':         mu_val,
-            'sigma':      std_val,
-            'threshold':  thresh_val,
-            'percentile': percentile,
-            'fpr_pct':    fpr_val,
-            'source':     'validation_set'
-        }, f, indent=2)
-    print(f"[*] Threshold (val): μ={mu_val:.6f}  σ={std_val:.6f}  P{percentile}={thresh_val:.6f}  FPR={fpr_val:.2f}%")
-    print(f"[*] Threshold file:  {threshold_path}")
+        threshold_path = args.model_out.replace('.pt', '_threshold.json')
+        with open(threshold_path, 'w') as f:
+            json.dump({
+                'mu':         mu_val,
+                'sigma':      std_val,
+                'threshold':  thresh_val,
+                'percentile': percentile,
+                'fpr_pct':    fpr_val,
+                'source':     'validation_set',
+                'vae':        True,
+                'beta_inf':   args.beta,
+            }, f, indent=2)
+        print(f"[*] Threshold (val): μ={mu_val:.6f}  σ={std_val:.6f}  P{percentile}={thresh_val:.6f}  FPR={fpr_val:.2f}%")
+        print(f"[*] Threshold file:  {threshold_path}")
+
+    else:
+        # ── Plain AE path ─────────────────────────────────────────
+        model   = LSTMAutoencoder(config)
+        trainer = ModelTrainer(model, config)
+
+        train_losses, val_losses, best_epoch = train_with_val(
+            model, trainer, train_norm, val_seqs,
+            epochs=args.epochs, batch_size=args.batch_size
+        )
+
+        model.save(args.model_out)
+
+        losses_path = args.model_out.replace('.pt', '_losses.json')
+        with open(losses_path, 'w') as f:
+            json.dump({'train': train_losses, 'val': val_losses, 'best_epoch': best_epoch}, f)
+        print(f"[*] Loss history: {losses_path}")
+
+        model.eval()
+        with torch.no_grad():
+            val_tensor = torch.FloatTensor(val_seqs)
+            val_errors = model.compute_reconstruction_error(val_tensor).numpy()
+
+        mu_val     = float(np.mean(val_errors))
+        std_val    = float(np.std(val_errors))
+        percentile = args.threshold_percentile
+        thresh_val = float(np.percentile(val_errors, percentile))
+        fpr_val    = float(np.mean(val_errors > thresh_val) * 100)
+
+        model.fit_threshold(val_errors, percentile)
+
+        threshold_path = args.model_out.replace('.pt', '_threshold.json')
+        with open(threshold_path, 'w') as f:
+            json.dump({
+                'mu':         mu_val,
+                'sigma':      std_val,
+                'threshold':  thresh_val,
+                'percentile': percentile,
+                'fpr_pct':    fpr_val,
+                'source':     'validation_set'
+            }, f, indent=2)
+        print(f"[*] Threshold (val): μ={mu_val:.6f}  σ={std_val:.6f}  P{percentile}={thresh_val:.6f}  FPR={fpr_val:.2f}%")
+        print(f"[*] Threshold file:  {threshold_path}")
 
     print(f"\n[*] Training selesai. Model: {args.model_out}")
     print(f"    Best epoch: {best_epoch}/{args.epochs}")
