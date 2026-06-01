@@ -83,3 +83,31 @@ def test_ensemble_is_anomaly_returns_bool():
     window_8 = torch.randn(1, 8, 4)
     flagged, _, _, _ = ensemble.is_anomaly(window_8)
     assert flagged is False
+
+
+def test_ensemble_is_anomaly_true_when_threshold_exceeded():
+    """Ensemble flags anomaly when score exceeds threshold."""
+    cfg_a = _mini_config(seq_len=4)
+    cfg_b = _mini_config(seq_len=8)
+    model_a = GRUAutoencoder(cfg_a)
+    model_b = GRUAutoencoder(cfg_b)
+    # Set near-zero threshold so any reconstruction error triggers anomaly
+    model_a.fit_threshold(np.zeros(10) + 1e-10, percentile=50.0)
+    model_b.fit_threshold(np.zeros(10) + 1e-10, percentile=50.0)
+    ensemble = GRUEnsemble(model_a, model_b)
+    window_8 = torch.randn(1, 8, 4)  # random input → non-trivial reconstruction error
+    flagged, combined, score_a, score_b = ensemble.is_anomaly(window_8)
+    assert flagged is True
+
+
+def test_ensemble_is_anomaly_raises_when_threshold_not_set():
+    """is_anomaly raises RuntimeError if fit_threshold was not called."""
+    cfg_a = _mini_config(seq_len=4)
+    cfg_b = _mini_config(seq_len=8)
+    model_a = GRUAutoencoder(cfg_a)
+    model_b = GRUAutoencoder(cfg_b)
+    # Do NOT call fit_threshold on model_a
+    model_b.fit_threshold(np.ones(10) * 999.0, percentile=99.0)
+    ensemble = GRUEnsemble(model_a, model_b)
+    with pytest.raises(RuntimeError, match="GRU-A anomaly_threshold not set"):
+        ensemble.is_anomaly(torch.randn(1, 8, 4))

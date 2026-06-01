@@ -168,8 +168,12 @@ class GRUEnsemble:
         Returns: (is_anomaly, combined_score, score_a, score_b)
         is_anomaly = True jika salah satu model melampaui threshold-nya.
         """
+        if self.model_a.anomaly_threshold is None:
+            raise RuntimeError("GRU-A anomaly_threshold not set — call fit_threshold() before is_anomaly()")
+        if self.model_b.anomaly_threshold is None:
+            raise RuntimeError("GRU-B anomaly_threshold not set — call fit_threshold() before is_anomaly()")
+        thr_a = self.model_a.anomaly_threshold
+        thr_b = self.model_b.anomaly_threshold
         combined, score_a, score_b = self.score(window)
-        thr_a = self.model_a.anomaly_threshold if self.model_a.anomaly_threshold is not None else float('inf')
-        thr_b = self.model_b.anomaly_threshold if self.model_b.anomaly_threshold is not None else float('inf')
         flagged = (score_a > thr_a) or (score_b > thr_b)
         return flagged, combined, score_a, score_b
