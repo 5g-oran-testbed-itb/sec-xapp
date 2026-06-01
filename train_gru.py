@@ -179,13 +179,18 @@ def main():
 
     os.makedirs('models', exist_ok=True)
 
-    # Load existing scaler — tidak fit baru agar normalisasi identik dengan LSTM
-    if not os.path.exists(args.scaler):
-        print(f"Error: {args.scaler} tidak ditemukan. Jalankan train_lstm.py dulu.")
-        sys.exit(1)
-    with open(args.scaler, 'rb') as f:
-        scaler = pickle.load(f)
-    print(f"[*] Reusing scaler: {args.scaler}  ({len(scaler.data_min_)} features)")
+    # Load existing scaler. If feature count mismatches FEATURE_NAMES, fit fresh from training data.
+    scaler = None
+    if os.path.exists(args.scaler):
+        with open(args.scaler, 'rb') as f:
+            _loaded = pickle.load(f)
+        if len(_loaded.data_min_) == len(FEATURE_NAMES):
+            scaler = _loaded
+            print(f"[*] Reusing scaler: {args.scaler}  ({len(scaler.data_min_)} features)")
+        else:
+            print(f"[!] Scaler has {len(_loaded.data_min_)} features but FEATURE_NAMES has {len(FEATURE_NAMES)} — fitting fresh scaler")
+    else:
+        print(f"[!] {args.scaler} not found — fitting fresh scaler")
 
     print(f"[*] Loading training CSV: {args.train}")
     df_train = load_csv(args.train)
@@ -202,6 +207,12 @@ def main():
 
     print(f"[*] Loading validation CSV: {args.val}")
     df_val = load_csv(args.val)
+
+    if scaler is None:
+        from sklearn.preprocessing import MinMaxScaler
+        scaler = MinMaxScaler()
+        scaler.fit(df_train[FEATURE_NAMES].values.astype(np.float32))
+        print(f"[*] Fresh scaler fit on {len(df_train)} training rows  ({len(FEATURE_NAMES)} features)")
 
     train_norm = scaler.transform(df_train[FEATURE_NAMES].values.astype(np.float32))
     val_norm   = scaler.transform(df_val[FEATURE_NAMES].values.astype(np.float32))
