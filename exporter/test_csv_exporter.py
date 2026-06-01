@@ -95,7 +95,7 @@ def test_eval_loader_returns_none_when_missing():
 # ── Latency tracking tests ───────────────────────────────────────────────────
 
 def test_track_latency_detect_on_stage0_to_1(monkeypatch):
-    """Stage 0→1 setelah 3.1s → g_latency_detect = 3100 ms."""
+    """Stage 0→1 after 3.1s → g_latency_detect = 3100 ms."""
     import csv_exporter
     csv_exporter._stage_ts.update({"t0": None, "t1": None, "t2": None})
     t = [0.0]
@@ -126,7 +126,7 @@ def test_track_latency_confirm_and_total_on_stage1_to_2(monkeypatch):
 
 
 def test_track_latency_noop_when_stage_unchanged(monkeypatch):
-    """Memanggil dengan stage sama → gauge tidak berubah."""
+    """Calling with same stage → gauge unchanged."""
     import csv_exporter
     csv_exporter._stage_ts.update({"t0": None, "t1": None, "t2": None})
     t = [0.0]

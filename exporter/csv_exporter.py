@@ -23,7 +23,7 @@ CSV_DIR      = os.getenv("CSV_DIR",      "/data/csv")
 EVAL_JSON    = os.getenv("EVAL_JSON",    "/data/results/eval_results.json")
 GRAFANA_URL  = os.getenv("GRAFANA_URL",  "http://grafana:3000")
 GRAFANA_TOKEN = os.getenv("GRAFANA_TOKEN", "admin:admin")
-POLL_INTERVAL = 0.1   # seconds between CSV tail polls (~100ms)
+POLL_INTERVAL = 0.1   # 100ms: sub-second resolution for latency measurement accuracy
 EVAL_POLL     = 10.0  # seconds between eval JSON checks
 
 # ── Prometheus metrics ───────────────────────────────────────────────────────
