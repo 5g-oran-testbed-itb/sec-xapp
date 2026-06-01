@@ -61,45 +61,6 @@ def test_parse_csv_row_handles_empty_string():
     assert result["air_delay_ul"] == 0.0
 
 
-# ── SimpleRuleEngine tests ───────────────────────────────────────────────────
-
-def _make_parsed_row(**kwargs):
-    """Return a float dict suitable for SimpleRuleEngine.update()"""
-    defaults = {
-        "prb_usage_dl_ratio": 0.0, "prb_usage_ul_ratio": 0.0,
-        "cqi": 15.0, "rach_preamble": 0.0, "air_delay_ul": 0.0,
-        "prb_direction": 0.0, "prb_total": 0.0,
-        "prb_dl_delta": 0.0, "prb_ul_delta": 0.0, "prb_burst_index": 0.0,
-        "empty_ind_rate": 0.0,
-        "prb_dl_roll_mean": 0.0, "prb_dl_roll_std": 0.0,
-        "prb_ul_roll_std": 0.0, "prb_ul_roll_max": 0.0,
-        "prb_ul_roll_max_100": 0.0,
-    }
-    defaults.update(kwargs)
-    return defaults
-
-
-def test_rule_engine_ul_flood_triggers_warning():
-    """3 consecutive rows with PRB_UL > 0.80 → stage >= 1."""
-    from csv_exporter import SimpleRuleEngine
-    engine = SimpleRuleEngine()
-    row = _make_parsed_row(prb_usage_ul_ratio=0.85)
-    stage = 0
-    for _ in range(3):
-        stage = engine.update(row)
-    assert stage >= 1
-
-
-def test_rule_engine_normal_stays_zero():
-    """Normal PRB levels keep stage at 0."""
-    from csv_exporter import SimpleRuleEngine
-    engine = SimpleRuleEngine()
-    row = _make_parsed_row(prb_usage_ul_ratio=0.10, prb_usage_dl_ratio=0.10)
-    for _ in range(10):
-        stage = engine.update(row)
-    assert stage == 0
-
-
 # ── EvalResultsLoader tests ──────────────────────────────────────────────────
 
 def test_eval_loader_reads_json(tmp_path):

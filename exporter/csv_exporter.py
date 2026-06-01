@@ -11,8 +11,6 @@ import time
 import glob
 import logging
 import requests
-import numpy as np
-import onnxruntime as ort
 from prometheus_client import Gauge, start_http_server
 
 logging.basicConfig(level=logging.INFO,
@@ -117,75 +115,6 @@ def load_eval_results(path: str):
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return None
-
-
-# ── Rule-based stage engine ──────────────────────────────────────────────────
-
-class SimpleRuleEngine:
-    """Lightweight port of sec_ids.c Stage-1 rules for live monitoring."""
-
-    def __init__(self):
-        self._ul_cnt = 0
-        self._dl_cnt = 0
-        self._rf_cnt = 0
-
-    def update(self, row: dict) -> int:
-        """Return current detection stage: 0=normal, 1=warning, 2=critical."""
-        prb_ul = row.get("prb_usage_ul_ratio", 0.0)
-        prb_dl = row.get("prb_usage_dl_ratio", 0.0)
-        air_dl = row.get("air_delay_ul", 0.0)
-
-        # R1: UL saturation
-        if prb_ul > 0.80:
-            self._ul_cnt += 1
-        else:
-            self._ul_cnt = max(0, self._ul_cnt - 1)
-
-        # R2: DL saturation (guard: UL must be low)
-        if prb_dl > 0.80 and prb_ul < 0.30:
-            self._dl_cnt += 1
-        else:
-            self._dl_cnt = max(0, self._dl_cnt - 1)
-
-        # R6: RF delay proxy
-        if air_dl > 100.0:
-            self._rf_cnt += 1
-        else:
-            self._rf_cnt = max(0, self._rf_cnt - 1)
-
-        if self._ul_cnt >= 3 or self._dl_cnt >= 3 or self._rf_cnt >= 3:
-            return 1
-        return 0
-
-
-# ── ONNX inference wrapper ───────────────────────────────────────────────────
-
-class OnnxInferencer:
-    THRESHOLD = 0.5  # ONNX output already normalized: >0.5 = anomaly
-
-    def __init__(self, model_path: str):
-        try:
-            self._sess = ort.InferenceSession(model_path)
-        except Exception as e:
-            log.warning("ONNX model not loaded (%s): %s", model_path, e)
-            self._sess = None
-        self._window  = np.zeros((WINDOW_SIZE, len(LSTM_FEATURES)), dtype=np.float32)
-        self._filled  = 0
-        self._in_name = self._sess.get_inputs()[0].name if self._sess else None
-
-    def update(self, row: dict) -> float:
-        """Feed one row, return normalized anomaly score (0–1+)."""
-        feat = np.array([row.get(f, 0.0) for f in LSTM_FEATURES], dtype=np.float32)
-        self._window = np.roll(self._window, -1, axis=0)
-        self._window[-1] = feat
-        if self._filled < WINDOW_SIZE:
-            self._filled += 1
-            return 0.0
-        if self._sess is None:
-            return 0.0
-        inp = self._window[np.newaxis, ...]  # shape (1, 10, 16)
-        out = self._sess.run(None, {self._in_name: inp})
-        return float(out[0].flatten()[0])  # safe numpy extraction
 
 
 # ── Grafana annotation helper ────────────────────────────────────────────────
