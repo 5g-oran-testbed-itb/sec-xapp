@@ -77,10 +77,9 @@ def _add_computed_features(df: pd.DataFrame) -> pd.DataFrame:
     # long-window rolling features
     _fill('rach_roll_max_30',    lambda: df['rach_preamble'].rolling(30, min_periods=1).max())
     _fill('empty_ind_roll_sum_30', lambda: df['empty_ind_rate'].rolling(30, min_periods=1).sum())
-    # CV features — use clip(lower=0.05) to prevent noise amplification when PRB≈0
-    _CV_FLOOR = 0.05
-    _fill('prb_dl_roll_cv',     lambda: df['prb_dl_roll_std'] / df['prb_dl_roll_mean'].clip(lower=_CV_FLOOR))
-    _fill('prb_ul_roll_cv',     lambda: df['prb_ul_roll_std'] / df['prb_usage_ul_ratio'].rolling(W10, min_periods=1).mean().clip(lower=_CV_FLOOR))
+    # CV features
+    _fill('prb_dl_roll_cv',     lambda: df['prb_dl_roll_std'] / (df['prb_dl_roll_mean'] + EPS))
+    _fill('prb_ul_roll_cv',     lambda: df['prb_ul_roll_std'] / (df['prb_usage_ul_ratio'].rolling(W10, min_periods=1).mean() + EPS))
     # discriminative features — verified formulas against dataset_attack_mei.csv
     _fill('cqi_roll_std',         lambda: df['cqi'].rolling(W10, min_periods=1).std(ddof=0).fillna(0))
     _fill('rach_roll_mean',       lambda: df['rach_preamble'].rolling(W10, min_periods=1).mean())
