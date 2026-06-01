@@ -1,455 +1,432 @@
 {
   "__inputs": [],
   "__requires": [],
-  "description": "Offline evaluation results: accuracy, recall, F1, latency per attack and stage",
+  "annotations": {
+    "list": []
+  },
+  "description": "Attack Detection Evaluation \u2014 interactive testing via Dash app",
   "editable": true,
+  "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": null,
   "links": [],
   "panels": [
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "unit": "percentunit",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 0.8 },
-              { "color": "green", "value": 0.9 }
-            ]
-          }
-        }
+      "gridPos": {
+        "h": 36,
+        "w": 24,
+        "x": 0,
+        "y": 12
       },
-      "gridPos": { "h": 4, "w": 5, "x": 0, "y": 0 },
-      "id": 10,
+      "id": 1,
       "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "auto"
+        "mode": "html",
+        "content": "<div style=\"width:100%;height:100%;margin:0;padding:0\">\n  <iframe\n    id=\"testing-frame\"\n    src=\"http://localhost:8050\"\n    style=\"width:100%;height:780px;border:none;border-radius:8px;\"\n  ></iframe>\n  <script>\n    (function(){\n      var frame = document.getElementById('testing-frame');\n      var host = window.location.hostname;\n      frame.src = 'http://' + host + ':8050';\n    })();\n  </script>\n</div>"
       },
-      "title": "Accuracy (Hybrid)",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "xapp_eval_accuracy{stage=\"hybrid\"}",
-          "legendFormat": "Accuracy",
-          "refId": "A"
-        }
-      ]
+      "title": "",
+      "transparent": true,
+      "type": "text"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
-          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "ms",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 0.8 },
-              { "color": "green", "value": 0.9 }
-            ]
-          }
-        }
-      },
-      "gridPos": { "h": 4, "w": 5, "x": 5, "y": 0 },
-      "id": 11,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "auto"
-      },
-      "title": "Recall (Hybrid)",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "xapp_eval_recall{stage=\"hybrid\",attack=\"all\"}",
-          "legendFormat": "Recall",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "unit": "percentunit",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 0.8 },
-              { "color": "green", "value": 0.9 }
-            ]
-          }
-        }
-      },
-      "gridPos": { "h": 4, "w": 5, "x": 10, "y": 0 },
-      "id": 12,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "auto"
-      },
-      "title": "Precision (Hybrid)",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "xapp_eval_precision{stage=\"hybrid\",attack=\"all\"}",
-          "legendFormat": "Precision",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "unit": "percentunit",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 0.8 },
-              { "color": "green", "value": 0.9 }
-            ]
-          }
-        }
-      },
-      "gridPos": { "h": 4, "w": 5, "x": 15, "y": 0 },
-      "id": 13,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "auto"
-      },
-      "title": "F1-Score (Hybrid)",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "xapp_eval_f1{stage=\"hybrid\",attack=\"all\"}",
-          "legendFormat": "F1",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "unit": "percentunit",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 0.02 },
-              { "color": "red", "value": 0.05 }
-            ]
-          }
-        }
-      },
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
-      "id": 14,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "auto"
-      },
-      "title": "FPR (Hybrid)",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "xapp_eval_fpr{stage=\"hybrid\"}",
-          "legendFormat": "FPR",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "unit": "percentunit",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 0.8 },
-              { "color": "green", "value": 0.95 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5000
+              },
+              {
+                "color": "red",
+                "value": 10000
+              }
             ]
           },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "\u2014",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "title": "DETECT LATENCY",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "xapp_latency_detect_ms",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5000
+              },
+              {
+                "color": "red",
+                "value": 15000
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "\u2014",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "title": "CONFIRM LATENCY",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "xapp_latency_confirm_ms",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10000
+              },
+              {
+                "color": "red",
+                "value": 20000
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "\u2014",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "title": "TOTAL TO MITIGATE",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "xapp_latency_total_ms",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "percentunit",
           "custom": {
-            "displayMode": "color-background",
-            "align": "auto"
+            "lineWidth": 2,
+            "fillOpacity": 10
           }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Attack" },
+            "matcher": {
+              "id": "byName",
+              "options": "PRB DL"
+            },
             "properties": [
-              { "id": "custom.width", "value": 120 },
-              { "id": "unit", "value": "string" },
-              { "id": "custom.displayMode", "value": "auto" }
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "PRB UL"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Stage"
+            },
+            "properties": [
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 20
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "hidden"
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": true,
+                  "tooltip": false,
+                  "viz": false
+                }
+              },
+              {
+                "id": "color.mode",
+                "value": "thresholds"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "transparent",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 0.4
+                    },
+                    {
+                      "color": "red",
+                      "value": 0.9
+                    }
+                  ]
+                }
+              }
             ]
           }
         ]
       },
-      "gridPos": { "h": 9, "w": 15, "x": 0, "y": 4 },
-      "id": 20,
-      "options": {
-        "footer": { "show": false },
-        "showHeader": true,
-        "sortBy": [{ "desc": true, "displayName": "F1" }]
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 4
       },
-      "title": "Per-Attack Breakdown (Hybrid IDS)",
-      "transformations": [
-        { "id": "merge", "options": {} },
-        {
-          "id": "organize",
-          "options": {
-            "renameByName": {
-              "Value #Recall": "Recall",
-              "Value #Prec": "Precision",
-              "Value #F1": "F1",
-              "attack": "Attack"
-            }
-          }
-        }
-      ],
-      "type": "table",
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "xapp_eval_recall{stage=\"hybrid\",attack!=\"all\"}",
-          "legendFormat": "{{attack}}",
-          "instant": true,
-          "refId": "Recall"
+      "id": 5,
+      "options": {
+        "legend": {
+          "calcs": [
+            "last",
+            "max"
+          ],
+          "displayMode": "list",
+          "placement": "bottom"
         },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "xapp_eval_precision{stage=\"hybrid\",attack!=\"all\"}",
-          "legendFormat": "{{attack}}",
-          "instant": true,
-          "refId": "Prec"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "xapp_eval_f1{stage=\"hybrid\",attack!=\"all\"}",
-          "legendFormat": "{{attack}}",
-          "instant": true,
-          "refId": "F1"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "unit": "percentunit",
-          "custom": { "fillOpacity": 80 }
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
         }
       },
-      "gridPos": { "h": 9, "w": 9, "x": 15, "y": 4 },
-      "id": 21,
-      "options": {
-        "barAlignment": 0,
-        "orientation": "horizontal",
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "single" },
-        "xTickLabelRotation": 0
-      },
-      "title": "F1-Score per Attack (Hybrid)",
-      "type": "barchart",
+      "timeFrom": "10m",
+      "title": "PRB DL / UL + Mitigation Stage \u2014 Last 10 min",
+      "type": "timeseries",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "xapp_eval_f1{stage=\"hybrid\",attack!=\"all\"}",
-          "legendFormat": "{{attack}}",
-          "instant": true,
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "unit": "percentunit",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 0.8 },
-              { "color": "green", "value": 0.9 }
-            ]
-          }
-        }
-      },
-      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 13 },
-      "id": 30,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "auto",
-        "orientation": "horizontal"
-      },
-      "title": "Stage 1 — Rule-Based",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "xapp_eval_accuracy{stage=\"stage1\"}",
-          "legendFormat": "Accuracy",
-          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "xapp_prb_dl_ratio",
+          "legendFormat": "PRB DL",
           "refId": "A"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "xapp_eval_recall{stage=\"stage1\",attack=\"all\"}",
-          "legendFormat": "Recall",
-          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "xapp_prb_ul_ratio",
+          "legendFormat": "PRB UL",
           "refId": "B"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "xapp_eval_f1{stage=\"stage1\",attack=\"all\"}",
-          "legendFormat": "F1",
-          "instant": true,
-          "refId": "C"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "unit": "percentunit",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 0.8 },
-              { "color": "green", "value": 0.9 }
-            ]
-          }
-        }
-      },
-      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 13 },
-      "id": 31,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "auto",
-        "orientation": "horizontal"
-      },
-      "title": "Stage 2 — LSTM",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "xapp_eval_accuracy{stage=\"stage2\"}",
-          "legendFormat": "Accuracy",
-          "instant": true,
-          "refId": "A"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "xapp_eval_recall{stage=\"stage2\",attack=\"all\"}",
-          "legendFormat": "Recall",
-          "instant": true,
-          "refId": "B"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "xapp_eval_f1{stage=\"stage2\",attack=\"all\"}",
-          "legendFormat": "F1",
-          "instant": true,
-          "refId": "C"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "unit": "percentunit",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 0.8 },
-              { "color": "green", "value": 0.9 }
-            ]
-          }
-        }
-      },
-      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 13 },
-      "id": 32,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "auto",
-        "orientation": "horizontal"
-      },
-      "title": "Hybrid ★ (Rule + LSTM)",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "xapp_eval_accuracy{stage=\"hybrid\"}",
-          "legendFormat": "Accuracy",
-          "instant": true,
-          "refId": "A"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "xapp_eval_recall{stage=\"hybrid\",attack=\"all\"}",
-          "legendFormat": "Recall",
-          "instant": true,
-          "refId": "B"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "xapp_eval_f1{stage=\"hybrid\",attack=\"all\"}",
-          "legendFormat": "F1",
-          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "xapp_detection_stage / 2",
+          "legendFormat": "Stage",
           "refId": "C"
         }
       ]
     }
   ],
-  "refresh": "30s",
+  "refresh": "",
   "schemaVersion": 39,
-  "tags": ["xapp", "5g", "security", "evaluation"],
-  "time": { "from": "now-1h", "to": "now" },
+  "tags": [
+    "xapp",
+    "testing"
+  ],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "browser",
-  "title": "xApp Security Monitor — Testing",
+  "title": "xApp Security Monitor \u2014 Testing",
   "uid": "xapp-testing-v1",
   "version": 1
 }
