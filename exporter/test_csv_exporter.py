@@ -129,3 +129,48 @@ def test_eval_loader_reads_json(tmp_path):
 def test_eval_loader_returns_none_when_missing():
     from csv_exporter import load_eval_results
     assert load_eval_results("/nonexistent/path.json") is None
+
+
+# ── Latency tracking tests ───────────────────────────────────────────────────
+
+def test_track_latency_detect_on_stage0_to_1(monkeypatch):
+    """Stage 0→1 setelah 3.1s → g_latency_detect = 3100 ms."""
+    import csv_exporter
+    csv_exporter._stage_ts.update({"t0": None, "t1": None, "t2": None})
+    t = [0.0]
+    monkeypatch.setattr(csv_exporter.time, "monotonic", lambda: t[0])
+
+    csv_exporter._track_stage_latency(0, -1)   # record t0
+    t[0] = 3.1
+    csv_exporter._track_stage_latency(1, 0)    # detect: 3100ms
+
+    assert csv_exporter.g_latency_detect._value.get() == pytest.approx(3100.0, rel=1e-3)
+
+
+def test_track_latency_confirm_and_total_on_stage1_to_2(monkeypatch):
+    """Stage 0→1→2: confirm = 5000ms, total = 8000ms."""
+    import csv_exporter
+    csv_exporter._stage_ts.update({"t0": None, "t1": None, "t2": None})
+    t = [0.0]
+    monkeypatch.setattr(csv_exporter.time, "monotonic", lambda: t[0])
+
+    csv_exporter._track_stage_latency(0, -1)   # t0=0
+    t[0] = 3.0
+    csv_exporter._track_stage_latency(1, 0)    # t1=3.0
+    t[0] = 8.0
+    csv_exporter._track_stage_latency(2, 1)    # t2=8.0
+
+    assert csv_exporter.g_latency_confirm._value.get() == pytest.approx(5000.0, rel=1e-3)
+    assert csv_exporter.g_latency_total._value.get() == pytest.approx(8000.0, rel=1e-3)
+
+
+def test_track_latency_noop_when_stage_unchanged(monkeypatch):
+    """Memanggil dengan stage sama → gauge tidak berubah."""
+    import csv_exporter
+    csv_exporter._stage_ts.update({"t0": None, "t1": None, "t2": None})
+    t = [0.0]
+    monkeypatch.setattr(csv_exporter.time, "monotonic", lambda: t[0])
+
+    before = csv_exporter.g_latency_detect._value.get()
+    csv_exporter._track_stage_latency(0, 0)    # no-op
+    assert csv_exporter.g_latency_detect._value.get() == before

@@ -25,7 +25,7 @@ EVAL_JSON    = os.getenv("EVAL_JSON",    "/data/results/eval_results.json")
 ONNX_MODEL   = os.getenv("ONNX_MODEL",  "/data/security_model.onnx")
 GRAFANA_URL  = os.getenv("GRAFANA_URL",  "http://grafana:3000")
 GRAFANA_TOKEN = os.getenv("GRAFANA_TOKEN", "admin:admin")
-POLL_INTERVAL = 1.0   # seconds between CSV tail polls
+POLL_INTERVAL = 0.1   # seconds between CSV tail polls (~100ms)
 EVAL_POLL     = 10.0  # seconds between eval JSON checks
 
 # ── Prometheus metrics ───────────────────────────────────────────────────────
@@ -36,6 +36,10 @@ g_rach        = Gauge("xapp_rach_preamble",    "RACH preamble count")
 g_air_delay   = Gauge("xapp_air_delay_ul_ms",  "UL air delay (ms)")
 g_anomaly     = Gauge("xapp_anomaly_score",    "LSTM anomaly score")
 g_stage       = Gauge("xapp_detection_stage",  "Detection stage: 0=normal 1=warn 2=crit")
+
+g_latency_detect  = Gauge("xapp_latency_detect_ms",  "Stage 0→1 detection latency ms (last event)")
+g_latency_confirm = Gauge("xapp_latency_confirm_ms", "Stage 1→2 confirmation latency ms (last event)")
+g_latency_total   = Gauge("xapp_latency_total_ms",   "Total Stage 0→2 mitigation latency ms (last event)")
 
 g_eval_acc    = Gauge("xapp_eval_accuracy",    "Eval accuracy",   ["stage"])
 g_eval_rec    = Gauge("xapp_eval_recall",      "Eval recall",     ["stage", "attack"])
@@ -54,8 +58,31 @@ LSTM_FEATURES = [
     "prb_ul_roll_std", "prb_ul_roll_max",
     "prb_ul_roll_max_100",
 ]
-FLOAT_COLS = LSTM_FEATURES  # same columns; alias used in parse_csv_row
+# Extra columns written by C binary — read directly, don't recompute
+EXTRA_COLS = ["stage1_alert", "stage2_confirmed", "anomaly_score"]
+FLOAT_COLS = LSTM_FEATURES + EXTRA_COLS
 WINDOW_SIZE = 10
+
+_stage_ts: dict = {"t0": None, "t1": None, "t2": None}
+
+
+def _track_stage_latency(stage: int, prev_stage: int) -> None:
+    """Update latency gauges on stage transitions. No-op if stage unchanged."""
+    if stage == prev_stage:
+        return
+    now = time.monotonic()
+    if stage == 0:
+        _stage_ts["t0"] = now
+    elif stage == 1 and prev_stage == 0:
+        _stage_ts["t1"] = now
+        if _stage_ts["t0"] is not None:
+            g_latency_detect.set((now - _stage_ts["t0"]) * 1000)
+    elif stage == 2 and prev_stage == 1:
+        _stage_ts["t2"] = now
+        if _stage_ts["t1"] is not None:
+            g_latency_confirm.set((now - _stage_ts["t1"]) * 1000)
+        if _stage_ts["t0"] is not None:
+            g_latency_total.set((now - _stage_ts["t0"]) * 1000)
 
 
 # ── Public helpers (unit-testable) ───────────────────────────────────────────
@@ -193,7 +220,7 @@ def push_grafana_annotation(stage: int, prev_stage: int):
 
 # ── Background threads ───────────────────────────────────────────────────────
 
-def csv_tail_loop(onnx: OnnxInferencer, rule: SimpleRuleEngine):
+def csv_tail_loop():
     """Continuously tail the newest CSV and update KPM + detection metrics."""
     current_file = None
     file_handle  = None
@@ -226,14 +253,18 @@ def csv_tail_loop(onnx: OnnxInferencer, rule: SimpleRuleEngine):
                 g_rach.set(row["rach_preamble"])
                 g_air_delay.set(row["air_delay_ul"])
 
-                score = onnx.update(row)
+                # Use values computed by C binary directly from CSV
+                score = row.get("anomaly_score", 0.0)
                 g_anomaly.set(score)
 
-                stage = rule.update(row)
+                stage2 = int(row.get("stage2_confirmed", 0.0))
+                stage1 = int(row.get("stage1_alert", 0.0))
+                stage = 2 if stage2 else (1 if stage1 else 0)
                 g_stage.set(stage)
 
                 if stage != prev_stage:
                     push_grafana_annotation(stage, prev_stage)
+                    _track_stage_latency(stage, prev_stage)
                     prev_stage = stage
 
         time.sleep(POLL_INTERVAL)
@@ -281,10 +312,7 @@ def main():
     log.info("Starting xapp Prometheus exporter on :8000")
     start_http_server(8000)
 
-    onnx = OnnxInferencer(ONNX_MODEL)
-    rule = SimpleRuleEngine()
-
-    t1 = threading.Thread(target=csv_tail_loop, args=(onnx, rule), daemon=True)
+    t1 = threading.Thread(target=csv_tail_loop, daemon=True)
     t2 = threading.Thread(target=eval_watch_loop, daemon=True)
     t1.start()
     t2.start()
