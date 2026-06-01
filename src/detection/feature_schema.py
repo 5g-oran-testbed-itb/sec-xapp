@@ -26,3 +26,7 @@ FEATURE_NAMES = [
 ]
 
 NUM_FEATURES = len(FEATURE_NAMES)
+
+# Per-feature MSE loss weights. Missing keys default to 1.0 in training scripts.
+# Empty = uniform weighting across all features.
+FEATURE_WEIGHTS: dict = {}
