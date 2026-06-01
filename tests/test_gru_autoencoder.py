@@ -52,6 +52,10 @@ def test_save_load_roundtrip(tmp_path):
     model.save(path)
     model2 = GRUAutoencoder.load(path, _mini_config())
     assert model2.anomaly_threshold == pytest.approx(model.anomaly_threshold)
+    x = torch.randn(1, 10, 4)
+    model.eval()
+    model2.eval()
+    assert torch.allclose(model(x), model2(x), atol=1e-5), "Loaded model weights differ from original"
 
 
 def test_ensemble_score_uses_correct_slicing():
@@ -59,8 +63,8 @@ def test_ensemble_score_uses_correct_slicing():
     cfg_b = _mini_config(seq_len=8)
     model_a = GRUAutoencoder(cfg_a)
     model_b = GRUAutoencoder(cfg_b)
-    model_a.fit_threshold(np.zeros(10), percentile=99.0)
-    model_b.fit_threshold(np.zeros(10), percentile=99.0)
+    model_a.fit_threshold(np.ones(10) * 0.1, percentile=99.0)
+    model_b.fit_threshold(np.ones(10) * 0.1, percentile=99.0)
     ensemble = GRUEnsemble(model_a, model_b)
     window_8 = torch.randn(1, 8, 4)
     combined, score_a, score_b = ensemble.score(window_8)

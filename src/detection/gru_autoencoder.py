@@ -12,6 +12,8 @@ class GRUEncoder(nn.Module):
     def __init__(self, input_size: int, hidden_sizes: List[int], latent_dim: int,
                  bidirectional: bool = True):
         super().__init__()
+        if len(hidden_sizes) < 2:
+            raise ValueError(f"GRUEncoder requires at least 2 hidden sizes, got {hidden_sizes}")
         D = 2 if bidirectional else 1
         self.bidirectional = bidirectional
         self.gru1 = nn.GRU(input_size=input_size,
@@ -36,6 +38,8 @@ class GRUDecoder(nn.Module):
     def __init__(self, latent_dim: int, hidden_sizes: List[int],
                  output_size: int, seq_len: int):
         super().__init__()
+        if len(hidden_sizes) < 2:
+            raise ValueError(f"GRUDecoder requires at least 2 hidden sizes, got {hidden_sizes}")
         self.seq_len = seq_len
         self.fc = nn.Linear(latent_dim, hidden_sizes[0])
         self.gru1 = nn.GRU(input_size=hidden_sizes[0],
@@ -112,6 +116,8 @@ class GRUAutoencoder(nn.Module):
 
     @classmethod
     def load(cls, path: str, config: dict) -> 'GRUAutoencoder':
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"[GRU-AE] Model file not found: {path}")
         state = torch.load(path, map_location='cpu', weights_only=False)
         saved_cfg = state.get('config', {})
         merged = dict(config)
@@ -122,7 +128,7 @@ class GRUAutoencoder(nn.Module):
             'latent_dim':     saved_cfg.get('latent_dim', 32),
             'bidirectional':  saved_cfg.get('bidirectional', True),
         }
-        merged['detection'] = {'sequence_length': saved_cfg.get('seq_len', 10)}
+        merged['detection'] = {**config.get('detection', {}), 'sequence_length': saved_cfg.get('seq_len', 10)}
         model = cls(merged)
         model.load_state_dict(state['model_state_dict'])
         model.anomaly_threshold   = state.get('anomaly_threshold')
@@ -163,7 +169,7 @@ class GRUEnsemble:
         is_anomaly = True jika salah satu model melampaui threshold-nya.
         """
         combined, score_a, score_b = self.score(window)
-        thr_a = self.model_a.anomaly_threshold or float('inf')
-        thr_b = self.model_b.anomaly_threshold or float('inf')
+        thr_a = self.model_a.anomaly_threshold if self.model_a.anomaly_threshold is not None else float('inf')
+        thr_b = self.model_b.anomaly_threshold if self.model_b.anomaly_threshold is not None else float('inf')
         flagged = (score_a > thr_a) or (score_b > thr_b)
         return flagged, combined, score_a, score_b
