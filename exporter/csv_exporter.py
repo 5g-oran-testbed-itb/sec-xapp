@@ -1,6 +1,7 @@
 """
 Prometheus exporter for sec-xapp.
-Tails live CSV from xapp_sec_moni, runs rule check + ONNX inference,
+Tails live CSV from xapp_sec_moni, reads pre-computed detection columns
+(anomaly_score, stage1_alert, stage2_confirmed) written by the C binary,
 exposes /metrics. Also watches eval_results.json for testing page metrics.
 """
 import csv
@@ -20,7 +21,6 @@ log = logging.getLogger(__name__)
 # ── Config from environment ──────────────────────────────────────────────────
 CSV_DIR      = os.getenv("CSV_DIR",      "/data/csv")
 EVAL_JSON    = os.getenv("EVAL_JSON",    "/data/results/eval_results.json")
-ONNX_MODEL   = os.getenv("ONNX_MODEL",  "/data/security_model.onnx")
 GRAFANA_URL  = os.getenv("GRAFANA_URL",  "http://grafana:3000")
 GRAFANA_TOKEN = os.getenv("GRAFANA_TOKEN", "admin:admin")
 POLL_INTERVAL = 0.1   # seconds between CSV tail polls (~100ms)
@@ -59,7 +59,6 @@ LSTM_FEATURES = [
 # Extra columns written by C binary — read directly, don't recompute
 EXTRA_COLS = ["stage1_alert", "stage2_confirmed", "anomaly_score"]
 FLOAT_COLS = LSTM_FEATURES + EXTRA_COLS
-WINDOW_SIZE = 10
 
 _stage_ts: dict = {"t0": None, "t1": None, "t2": None}
 
