@@ -213,6 +213,10 @@ def main():
         scaler = MinMaxScaler()
         scaler.fit(df_train[FEATURE_NAMES].values.astype(np.float32))
         print(f"[*] Fresh scaler fit on {len(df_train)} training rows  ({len(FEATURE_NAMES)} features)")
+        scaler_out = args.model_out.replace('.pt', '_scaler.pkl')
+        with open(scaler_out, 'wb') as f:
+            pickle.dump(scaler, f)
+        print(f"[*] Scaler saved to {scaler_out}")
 
     train_norm = scaler.transform(df_train[FEATURE_NAMES].values.astype(np.float32))
     val_norm   = scaler.transform(df_val[FEATURE_NAMES].values.astype(np.float32))
@@ -238,14 +242,12 @@ def main():
         epochs=args.epochs, batch_size=args.batch_size, lr=args.lr,
     )
 
-    model.save(args.model_out)
-
     losses_path = args.model_out.replace('.pt', '_losses.json')
     with open(losses_path, 'w') as f:
         json.dump({'train': train_losses, 'val': val_losses, 'best_epoch': best_epoch}, f)
     print(f"[*] Loss history: {losses_path}")
 
-    # Fit threshold dari val set
+    # Fit threshold dari val set, lalu save (supaya threshold ikut tersimpan di .pt)
     model.eval()
     val_tensor = torch.FloatTensor(val_seqs)
     with torch.no_grad():
@@ -256,6 +258,7 @@ def main():
     thresh_val = float(np.percentile(val_errors, args.threshold_percentile))
     fpr_val    = float(np.mean(val_errors > thresh_val) * 100)
     model.fit_threshold(val_errors, args.threshold_percentile)
+    model.save(args.model_out)
 
     threshold_path = args.model_out.replace('.pt', '_threshold.json')
     with open(threshold_path, 'w') as f:

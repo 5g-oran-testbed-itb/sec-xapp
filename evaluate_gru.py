@@ -110,14 +110,24 @@ def run_gru_evaluation(csv_path, model_a_path, model_b_path,
     rows = load_csv_rows(csv_path)
     print(f"  {len(rows)} rows")
 
+    def _load_model_with_threshold(model_path):
+        m = GRUAutoencoder.load(model_path, {})
+        m.eval()
+        if m.anomaly_threshold is None:
+            thresh_path = model_path.replace('.pt', '_threshold.json')
+            if os.path.exists(thresh_path):
+                with open(thresh_path) as f:
+                    m.anomaly_threshold = json.load(f)['threshold']
+            else:
+                raise FileNotFoundError(f"Threshold not in .pt and {thresh_path} not found")
+        return m
+
     print(f"Loading GRU-A: {model_a_path}")
-    model_a = GRUAutoencoder.load(model_a_path, {})
-    model_a.eval()
+    model_a = _load_model_with_threshold(model_a_path)
     print(f"  seq_len={model_a.seq_len}  threshold={model_a.anomaly_threshold:.6f}")
 
     print(f"Loading GRU-B: {model_b_path}")
-    model_b = GRUAutoencoder.load(model_b_path, {})
-    model_b.eval()
+    model_b = _load_model_with_threshold(model_b_path)
     print(f"  seq_len={model_b.seq_len}  threshold={model_b.anomaly_threshold:.6f}")
 
     gru_det = GRUDetector(model_a, model_b, scaler_path=scaler)
