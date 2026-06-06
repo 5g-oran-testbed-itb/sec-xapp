@@ -1,0 +1,131 @@
+{
+  "uid": "xapp-eval",
+  "title": "xApp Security Monitor — Evaluation Results",
+  "tags": ["xapp", "security", "evaluation"],
+  "timezone": "browser",
+  "refresh": "1m",
+  "time": { "from": "now-5m", "to": "now" },
+  "schemaVersion": 38,
+  "panels": [
+    { "id": 1, "type": "text", "title": "",
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 2},
+      "options": {"mode": "markdown", "content": "## Known Attack Dataset — `dataset_attack_mei.csv` (17,941 samples, 5 labels)\nMetrics from offline evaluation. Stage1 = per-window, Stage2/Hybrid = 5× consecutive confirmation."}
+    },
+    { "id": 10, "type": "stat", "title": "Rule-Based",
+      "gridPos": {"x": 0, "y": 2, "w": 4, "h": 5},
+      "fieldConfig": {"defaults": {"decimals": 3}},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "vertical"},
+      "targets": [
+        {"expr": "xapp_eval_recall_v2{model='rule',attack='all'}",    "instant": true, "legendFormat": "Recall"},
+        {"expr": "xapp_eval_f1_v2{model='rule',attack='all'}",        "instant": true, "legendFormat": "F1"},
+        {"expr": "xapp_eval_fpr_v2{model='rule'}",                    "instant": true, "legendFormat": "FPR Stage1"}
+      ]
+    },
+    { "id": 11, "type": "stat", "title": "LSTM Ensemble",
+      "gridPos": {"x": 4, "y": 2, "w": 4, "h": 5},
+      "fieldConfig": {"defaults": {"decimals": 3}},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "vertical"},
+      "targets": [
+        {"expr": "xapp_eval_recall_v2{model='lstm',attack='all'}",    "instant": true, "legendFormat": "Recall"},
+        {"expr": "xapp_eval_f1_v2{model='lstm',attack='all'}",        "instant": true, "legendFormat": "F1"},
+        {"expr": "xapp_eval_fpr_v2{model='lstm'}",                    "instant": true, "legendFormat": "FPR Stage1"}
+      ]
+    },
+    { "id": 12, "type": "stat", "title": "GRU Tuned",
+      "gridPos": {"x": 8, "y": 2, "w": 4, "h": 5},
+      "fieldConfig": {"defaults": {"decimals": 3}},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "vertical"},
+      "targets": [
+        {"expr": "xapp_eval_recall_v2{model='gru_tuned',attack='all'}", "instant": true, "legendFormat": "Recall"},
+        {"expr": "xapp_eval_f1_v2{model='gru_tuned',attack='all'}",     "instant": true, "legendFormat": "F1"},
+        {"expr": "xapp_eval_fpr_v2{model='gru_tuned'}",                 "instant": true, "legendFormat": "FPR Stage1"}
+      ]
+    },
+    { "id": 13, "type": "stat", "title": "Hybrid Rule+LSTM",
+      "gridPos": {"x": 12, "y": 2, "w": 5, "h": 5},
+      "fieldConfig": {"defaults": {"decimals": 3}},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "vertical"},
+      "targets": [
+        {"expr": "xapp_eval_recall_v2{model='hybrid_lstm',attack='all'}", "instant": true, "legendFormat": "Recall"},
+        {"expr": "xapp_eval_f1_v2{model='hybrid_lstm',attack='all'}",     "instant": true, "legendFormat": "F1"},
+        {"expr": "xapp_eval_fpr_v2{model='hybrid_lstm'}",                 "instant": true, "legendFormat": "FPR Stage2"}
+      ]
+    },
+    { "id": 14, "type": "stat", "title": "Hybrid Rule+GRU",
+      "gridPos": {"x": 17, "y": 2, "w": 7, "h": 5},
+      "fieldConfig": {"defaults": {"decimals": 3}},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "vertical"},
+      "targets": [
+        {"expr": "xapp_eval_recall_v2{model='hybrid_gru',attack='all'}", "instant": true, "legendFormat": "Recall"},
+        {"expr": "xapp_eval_f1_v2{model='hybrid_gru',attack='all'}",     "instant": true, "legendFormat": "F1"},
+        {"expr": "xapp_eval_fpr_v2{model='hybrid_gru'}",                 "instant": true, "legendFormat": "FPR Stage1"}
+      ]
+    },
+    { "id": 20, "type": "bargauge", "title": "Per-Attack Recall — UL Flood",
+      "gridPos": {"x": 0, "y": 7, "w": 6, "h": 6},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}},
+      "options": {"orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "targets": [
+        {"expr": "xapp_eval_recall_v2{attack='ul_flood'}", "instant": true,
+         "legendFormat": "{{model}}"}
+      ]
+    },
+    { "id": 21, "type": "bargauge", "title": "Per-Attack Recall — DL Flood",
+      "gridPos": {"x": 6, "y": 7, "w": 6, "h": 6},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}},
+      "options": {"orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "targets": [
+        {"expr": "xapp_eval_recall_v2{attack='dl_flood'}", "instant": true,
+         "legendFormat": "{{model}}"}
+      ]
+    },
+    { "id": 22, "type": "bargauge", "title": "Per-Attack Recall — Burst ON/OFF",
+      "gridPos": {"x": 12, "y": 7, "w": 6, "h": 6},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}},
+      "options": {"orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "targets": [
+        {"expr": "xapp_eval_recall_v2{attack='burst'}", "instant": true,
+         "legendFormat": "{{model}}"}
+      ]
+    },
+    { "id": 23, "type": "bargauge", "title": "Per-Attack Recall — RRC Storm",
+      "gridPos": {"x": 18, "y": 7, "w": 6, "h": 6},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}},
+      "options": {"orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "targets": [
+        {"expr": "xapp_eval_recall_v2{attack='rrc_storm'}", "instant": true,
+         "legendFormat": "{{model}}"}
+      ]
+    },
+    { "id": 30, "type": "bargauge", "title": "FPR Comparison (Stage1) — Lower is Better",
+      "gridPos": {"x": 0, "y": 13, "w": 12, "h": 6},
+      "fieldConfig": {
+        "defaults": {"unit": "percentunit", "min": 0, "max": 0.1,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"value": null, "color": "green"},
+            {"value": 0.02, "color": "yellow"},
+            {"value": 0.05, "color": "red"}
+          ]}}
+      },
+      "options": {"orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "targets": [
+        {"expr": "xapp_eval_fpr_v2", "instant": true, "legendFormat": "{{model}}"}
+      ]
+    },
+    { "id": 31, "type": "bargauge", "title": "F1 Score Comparison — Higher is Better",
+      "gridPos": {"x": 12, "y": 13, "w": 12, "h": 6},
+      "fieldConfig": {
+        "defaults": {"unit": "percentunit", "min": 0.7, "max": 1.0,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"value": null, "color": "red"},
+            {"value": 0.90, "color": "yellow"},
+            {"value": 0.95, "color": "green"}
+          ]}}
+      },
+      "options": {"orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "targets": [
+        {"expr": "xapp_eval_f1_v2{attack='all'}", "instant": true, "legendFormat": "{{model}}"}
+      ]
+    }
+  ]
+}
