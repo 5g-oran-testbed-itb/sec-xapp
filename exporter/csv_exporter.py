@@ -45,6 +45,26 @@ g_eval_prec   = Gauge("xapp_eval_precision",   "Eval precision",  ["stage", "att
 g_eval_f1     = Gauge("xapp_eval_f1",          "Eval F1",         ["stage", "attack"])
 g_eval_fpr    = Gauge("xapp_eval_fpr",         "Eval FPR",        ["stage"])
 
+# ── GRU detection metrics ────────────────────────────────────────────────────
+g_gru_a     = Gauge("xapp_gru_score_a",     "GRU-A reconstruction error (raw)")
+g_gru_b     = Gauge("xapp_gru_score_b",     "GRU-B reconstruction error (raw)")
+g_gru_stage = Gauge("xapp_gru_stage",       "GRU stage: 0=normal 1=warn 2=crit")
+
+# ── Extra features not yet exposed ──────────────────────────────────────────
+g_alert_type  = Gauge("xapp_alert_type",      "Alert type: 0=none 1=ul_flood 2=dl_flood 3=burst 4=rrc_storm")
+g_empty_ind   = Gauge("xapp_empty_ind_rate",  "RRC empty indication rate per window")
+g_burst_idx   = Gauge("xapp_prb_burst_index", "PRB burst index log ratio")
+
+# ── Eval metrics v2 (5 models, per-attack labels) ────────────────────────────
+g_eval_recall_v2    = Gauge("xapp_eval_recall_v2",    "Eval recall v2",    ["model", "attack"])
+g_eval_fpr_v2       = Gauge("xapp_eval_fpr_v2",       "Eval FPR v2",       ["model"])
+g_eval_f1_v2        = Gauge("xapp_eval_f1_v2",        "Eval F1 v2",        ["model", "attack"])
+g_eval_precision_v2 = Gauge("xapp_eval_precision_v2", "Eval precision v2", ["model"])
+
+# ── Shared state: latest CSV row for GRU thread ──────────────────────────────
+_latest_row: dict = {}
+_latest_row_lock = threading.Lock()
+
 # ── CSV columns we care about ────────────────────────────────────────────────
 LSTM_FEATURES = [
     "prb_usage_dl_ratio", "prb_usage_ul_ratio",
@@ -56,9 +76,11 @@ LSTM_FEATURES = [
     "prb_ul_roll_std", "prb_ul_roll_max",
     "prb_ul_roll_max_100",
 ]
-# Extra columns written by C binary — read directly, don't recompute
-EXTRA_COLS = ["stage1_alert", "stage2_confirmed", "anomaly_score"]
-FLOAT_COLS = LSTM_FEATURES + EXTRA_COLS
+EXTRA_COLS  = ["stage1_alert", "stage2_confirmed", "anomaly_score"]
+FLOAT_COLS  = LSTM_FEATURES + EXTRA_COLS
+STR_COLS    = {"alert_type"}
+ALERT_TYPE_MAP = {"none": 0, "ul_flood": 1, "dl_flood": 2,
+                  "burst": 3, "rrc_storm": 4}
 
 _stage_ts: dict = {"t0": None, "t1": None, "t2": None}
 
@@ -104,6 +126,7 @@ def parse_csv_row(raw: dict) -> dict:
             out[col] = float(v)
         except (ValueError, TypeError):
             out[col] = 0.0
+    out["alert_type"] = raw.get("alert_type", "none")
     return out
 
 
@@ -189,6 +212,15 @@ def csv_tail_loop():
                 stage1 = int(row.get("stage1_alert", 0.0))
                 stage = 2 if stage2 else (1 if stage1 else 0)
                 g_stage.set(stage)
+
+                # new feature gauges
+                g_empty_ind.set(row.get("empty_ind_rate", 0.0))
+                g_burst_idx.set(row.get("prb_burst_index", 0.0))
+                g_alert_type.set(ALERT_TYPE_MAP.get(row.get("alert_type", "none"), 0))
+
+                # update shared state for GRU thread
+                with _latest_row_lock:
+                    _latest_row.update(row)
 
                 if stage != prev_stage:
                     push_grafana_annotation(stage, prev_stage)

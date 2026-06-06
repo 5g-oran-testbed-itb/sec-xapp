@@ -34,6 +34,7 @@ HEADER = [
     "label", "empty_ind_rate",
     "prb_dl_roll_mean", "prb_dl_roll_std",
     "prb_ul_roll_std", "prb_ul_roll_max", "prb_ul_roll_max_100",
+    "alert_type",
 ]
 
 def _make_row(**kwargs):
@@ -41,6 +42,7 @@ def _make_row(**kwargs):
     defaults["timestamp_ms"] = "1000"
     defaults["datetime"] = "2026-01-01 00:00:00"
     defaults["label"] = "0"
+    defaults["alert_type"] = "none"
     defaults.update({k: str(v) for k, v in kwargs.items()})
     return defaults
 
@@ -135,3 +137,27 @@ def test_track_latency_noop_when_stage_unchanged(monkeypatch):
     before = csv_exporter.g_latency_detect._value.get()
     csv_exporter._track_stage_latency(0, 0)    # no-op
     assert csv_exporter.g_latency_detect._value.get() == before
+
+
+# ── New gauge / parse tests ──────────────────────────────────────────────────
+
+def test_parse_csv_row_includes_alert_type_string():
+    from csv_exporter import parse_csv_row
+    row = _make_row()
+    row["alert_type"] = "ul_flood"
+    result = parse_csv_row(row)
+    assert result["alert_type"] == "ul_flood"
+
+
+def test_parse_csv_row_includes_empty_ind_rate():
+    from csv_exporter import parse_csv_row
+    row = _make_row(empty_ind_rate="3.0")
+    result = parse_csv_row(row)
+    assert result["empty_ind_rate"] == pytest.approx(3.0)
+
+
+def test_parse_csv_row_includes_prb_burst_index():
+    from csv_exporter import parse_csv_row
+    row = _make_row(prb_burst_index="2.5")
+    result = parse_csv_row(row)
+    assert result["prb_burst_index"] == pytest.approx(2.5)
