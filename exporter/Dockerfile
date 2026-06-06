@@ -5,6 +5,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY csv_exporter.py .
+COPY gru_model.py .
 
 EXPOSE 8000
 CMD ["python3", "-u", "csv_exporter.py"]

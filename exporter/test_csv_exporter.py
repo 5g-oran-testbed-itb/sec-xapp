@@ -161,3 +161,27 @@ def test_parse_csv_row_includes_prb_burst_index():
     row = _make_row(prb_burst_index="2.5")
     result = parse_csv_row(row)
     assert result["prb_burst_index"] == pytest.approx(2.5)
+
+
+# ── gru_model tests ──────────────────────────────────────────────────────────
+
+def test_gru_model_load_raises_on_missing_file():
+    from gru_model import GRUAutoencoder
+    with pytest.raises(FileNotFoundError):
+        GRUAutoencoder.load("/nonexistent/model.pt")
+
+
+def test_extract_gru_features_correct_order():
+    from gru_model import extract_gru_features, GRU_FEATURE_COLS
+    row = {col: float(i) for i, col in enumerate(GRU_FEATURE_COLS)}
+    features = extract_gru_features(row)
+    assert features.shape == (16,)
+    assert features[0] == pytest.approx(0.0)   # prb_usage_dl_ratio
+    assert features[10] == pytest.approx(10.0)  # empty_ind_rate
+
+
+def test_extract_gru_features_missing_col_defaults_to_zero():
+    from gru_model import extract_gru_features
+    features = extract_gru_features({})
+    assert features.shape == (16,)
+    assert all(v == 0.0 for v in features)
