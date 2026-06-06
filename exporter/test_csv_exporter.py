@@ -220,3 +220,26 @@ def test_gru_stage_normal_when_both_below_thresh():
              else 1 if score_a > csv_exporter.GRU_THRESH_A * 0.5 or score_b > csv_exporter.GRU_THRESH_B * 0.5
              else 0)
     assert stage == 0
+
+
+# ── Eval v2 tests ────────────────────────────────────────────────────────────
+
+def test_populate_eval_v2_sets_rule_recall():
+    import csv_exporter
+    csv_exporter._populate_eval_v2()
+    val = csv_exporter.g_eval_recall_v2.labels(model="rule", attack="all")._value.get()
+    assert abs(val - 0.9765) < 0.001
+
+
+def test_populate_eval_v2_sets_gru_tuned_rrc_recall():
+    import csv_exporter
+    csv_exporter._populate_eval_v2()
+    val = csv_exporter.g_eval_recall_v2.labels(model="gru_tuned", attack="rrc_storm")._value.get()
+    assert abs(val - 0.715) < 0.001
+
+
+def test_populate_eval_v2_sets_hybrid_gru_fpr():
+    import csv_exporter
+    csv_exporter._populate_eval_v2()
+    val = csv_exporter.g_eval_fpr_v2.labels(model="hybrid_gru")._value.get()
+    assert abs(val - 0.0287) < 0.0001

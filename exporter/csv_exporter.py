@@ -92,6 +92,45 @@ GRU_SEQ_A    = 10
 GRU_SEQ_B    = 30
 GRU_POLL_SEC = 1.0
 
+# ── Known evaluation results (from dataset_attack_mei.csv offline eval) ──────
+KNOWN_EVAL = {
+    "rule": {
+        "overall":   {"recall": 0.9765, "precision": 0.9862, "f1": 0.9813, "fpr": 0.0140},
+        "ul_flood":  {"recall": 0.987,  "f1": 0.963},
+        "dl_flood":  {"recall": 0.993,  "f1": 0.967},
+        "burst":     {"recall": 0.982,  "f1": 0.971},
+        "rrc_storm": {"recall": 0.940,  "f1": 0.938},
+    },
+    "lstm": {
+        "overall":   {"recall": 0.7918, "precision": 0.9284, "f1": 0.8547, "fpr": 0.0627},
+        "ul_flood":  {"recall": 0.814,  "f1": 0.893},
+        "dl_flood":  {"recall": 0.997,  "f1": 0.995},
+        "burst":     {"recall": 0.614,  "f1": 0.736},
+        "rrc_storm": {"recall": 0.838,  "f1": 0.882},
+    },
+    "gru_tuned": {
+        "overall":   {"recall": 0.932,  "precision": 0.930, "f1": 0.930, "fpr": 0.053},
+        "ul_flood":  {"recall": 0.996,  "f1": 0.970},
+        "dl_flood":  {"recall": 0.994,  "f1": 0.980},
+        "burst":     {"recall": 0.987,  "f1": 0.987},
+        "rrc_storm": {"recall": 0.715,  "f1": 0.790},
+    },
+    "hybrid_lstm": {
+        "overall":   {"recall": 0.9831, "precision": 0.9410, "f1": 0.9616, "fpr": 0.0137},
+        "ul_flood":  {"recall": 0.992,  "f1": 0.964},
+        "dl_flood":  {"recall": 0.997,  "f1": 0.967},
+        "burst":     {"recall": 0.995,  "f1": 0.971},
+        "rrc_storm": {"recall": 0.940,  "f1": 0.938},
+    },
+    "hybrid_gru": {
+        "overall":   {"recall": 0.9824, "precision": 0.9724, "f1": 0.9773, "fpr": 0.0287},
+        "ul_flood":  {"recall": 0.992,  "f1": 0.937},
+        "dl_flood":  {"recall": 0.993,  "f1": 0.937},
+        "burst":     {"recall": 0.987,  "f1": 0.971},
+        "rrc_storm": {"recall": 0.940,  "f1": 0.938},
+    },
+}
+
 _stage_ts: dict = {"t0": None, "t1": None, "t2": None}
 
 
@@ -276,6 +315,22 @@ def _update_eval_metrics(data: dict):
             g_eval_f1.labels(stage=stage,   attack=attack).set(metrics.get("f1", 0))
 
 
+def _populate_eval_v2():
+    """Push KNOWN_EVAL into Prometheus gauge xapp_eval_*_v2 at startup."""
+    attacks = ["ul_flood", "dl_flood", "burst", "rrc_storm"]
+    for model, data in KNOWN_EVAL.items():
+        ov = data["overall"]
+        g_eval_recall_v2.labels(model=model, attack="all").set(ov["recall"])
+        g_eval_precision_v2.labels(model=model).set(ov["precision"])
+        g_eval_f1_v2.labels(model=model, attack="all").set(ov["f1"])
+        g_eval_fpr_v2.labels(model=model).set(ov["fpr"])
+        for atk in attacks:
+            if atk in data:
+                g_eval_recall_v2.labels(model=model, attack=atk).set(data[atk]["recall"])
+                g_eval_f1_v2.labels(model=model, attack=atk).set(data[atk]["f1"])
+    log.info("Eval v2 metrics populated for %d models", len(KNOWN_EVAL))
+
+
 def gru_inference_loop():
     """Load GRU-A + GRU-B, run inference every GRU_POLL_SEC from latest CSV row."""
     try:
@@ -342,6 +397,7 @@ def gru_inference_loop():
 def main():
     log.info("Starting xapp Prometheus exporter on :8000")
     start_http_server(8000)
+    _populate_eval_v2()
 
     t1 = threading.Thread(target=csv_tail_loop,      daemon=True, name="csv-tail")
     t2 = threading.Thread(target=eval_watch_loop,    daemon=True, name="eval-watch")
