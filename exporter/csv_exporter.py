@@ -82,6 +82,16 @@ STR_COLS    = {"alert_type"}
 ALERT_TYPE_MAP = {"none": 0, "ul_flood": 1, "dl_flood": 2,
                   "burst": 3, "rrc_storm": 4}
 
+# ── GRU inference config ─────────────────────────────────────────────────────
+GRU_MODEL_A  = os.getenv("GRU_MODEL_A", "/data/models/gru_autoencoder_A_v1.pt")
+GRU_MODEL_B  = os.getenv("GRU_MODEL_B", "/data/models/gru_autoencoder_B_v1.pt")
+GRU_SCALER   = os.getenv("GRU_SCALER",  "/data/models/scaler_gru.pkl")
+GRU_THRESH_A = 0.002881
+GRU_THRESH_B = 0.003363
+GRU_SEQ_A    = 10
+GRU_SEQ_B    = 30
+GRU_POLL_SEC = 1.0
+
 _stage_ts: dict = {"t0": None, "t1": None, "t2": None}
 
 
@@ -266,16 +276,79 @@ def _update_eval_metrics(data: dict):
             g_eval_f1.labels(stage=stage,   attack=attack).set(metrics.get("f1", 0))
 
 
+def gru_inference_loop():
+    """Load GRU-A + GRU-B, run inference every GRU_POLL_SEC from latest CSV row."""
+    try:
+        from gru_model import GRUAutoencoder, load_scaler, extract_gru_features
+        import numpy as np
+    except ImportError as e:
+        log.warning("GRU inference disabled: %s", e)
+        return
+
+    try:
+        model_a = GRUAutoencoder.load(GRU_MODEL_A)
+        model_b = GRUAutoencoder.load(GRU_MODEL_B)
+        scaler  = load_scaler(GRU_SCALER)
+        log.info("GRU models loaded: A seq=%d  B seq=%d", GRU_SEQ_A, GRU_SEQ_B)
+    except (FileNotFoundError, Exception) as e:
+        log.warning("GRU models not available, thread exiting: %s", e)
+        return
+
+    from collections import deque
+    import torch
+    buf_a = deque(maxlen=GRU_SEQ_A)
+    buf_b = deque(maxlen=GRU_SEQ_B)
+
+    while True:
+        time.sleep(GRU_POLL_SEC)
+        with _latest_row_lock:
+            row = dict(_latest_row)
+        if not row:
+            continue
+
+        try:
+            feat_raw = extract_gru_features(row)                          # (16,)
+            feat_scaled = scaler.transform(feat_raw.reshape(1, -1))[0]   # (16,)
+
+            buf_a.append(feat_scaled)
+            buf_b.append(feat_scaled)
+
+            score_a, score_b = 0.0, 0.0
+
+            if len(buf_a) == GRU_SEQ_A:
+                x_a = torch.tensor(np.array(buf_a), dtype=torch.float32).unsqueeze(0)
+                score_a = model_a.reconstruction_error(x_a)
+                g_gru_a.set(score_a)
+
+            if len(buf_b) == GRU_SEQ_B:
+                x_b = torch.tensor(np.array(buf_b), dtype=torch.float32).unsqueeze(0)
+                score_b = model_b.reconstruction_error(x_b)
+                g_gru_b.set(score_b)
+
+            if score_a > GRU_THRESH_A or score_b > GRU_THRESH_B:
+                gru_stage = 2
+            elif score_a > GRU_THRESH_A * 0.5 or score_b > GRU_THRESH_B * 0.5:
+                gru_stage = 1
+            else:
+                gru_stage = 0
+            g_gru_stage.set(gru_stage)
+
+        except Exception as e:
+            log.debug("GRU inference error (skipping): %s", e)
+
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
     log.info("Starting xapp Prometheus exporter on :8000")
     start_http_server(8000)
 
-    t1 = threading.Thread(target=csv_tail_loop, daemon=True)
-    t2 = threading.Thread(target=eval_watch_loop, daemon=True)
+    t1 = threading.Thread(target=csv_tail_loop,      daemon=True, name="csv-tail")
+    t2 = threading.Thread(target=eval_watch_loop,    daemon=True, name="eval-watch")
+    t3 = threading.Thread(target=gru_inference_loop, daemon=True, name="gru-infer")
     t1.start()
     t2.start()
+    t3.start()
 
     log.info("Exporter running. Metrics at http://0.0.0.0:8000/metrics")
     while True:

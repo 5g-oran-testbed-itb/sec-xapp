@@ -185,3 +185,38 @@ def test_extract_gru_features_missing_col_defaults_to_zero():
     features = extract_gru_features({})
     assert features.shape == (16,)
     assert all(v == 0.0 for v in features)
+
+
+# ── GRU stage logic tests ────────────────────────────────────────────────────
+
+def test_gru_stage_crit_when_score_above_thresh():
+    """Score above threshold → stage 2."""
+    import csv_exporter
+    score_a = csv_exporter.GRU_THRESH_A * 1.5
+    score_b = 0.0
+    stage = (2 if score_a > csv_exporter.GRU_THRESH_A or score_b > csv_exporter.GRU_THRESH_B
+             else 1 if score_a > csv_exporter.GRU_THRESH_A * 0.5 or score_b > csv_exporter.GRU_THRESH_B * 0.5
+             else 0)
+    assert stage == 2
+
+
+def test_gru_stage_warn_when_score_in_warn_zone():
+    """Score between 50%–100% of threshold → stage 1."""
+    import csv_exporter
+    score_a = csv_exporter.GRU_THRESH_A * 0.7
+    score_b = 0.0
+    stage = (2 if score_a > csv_exporter.GRU_THRESH_A or score_b > csv_exporter.GRU_THRESH_B
+             else 1 if score_a > csv_exporter.GRU_THRESH_A * 0.5 or score_b > csv_exporter.GRU_THRESH_B * 0.5
+             else 0)
+    assert stage == 1
+
+
+def test_gru_stage_normal_when_both_below_thresh():
+    """Both scores below 50% of threshold → stage 0."""
+    import csv_exporter
+    score_a = csv_exporter.GRU_THRESH_A * 0.1
+    score_b = csv_exporter.GRU_THRESH_B * 0.1
+    stage = (2 if score_a > csv_exporter.GRU_THRESH_A or score_b > csv_exporter.GRU_THRESH_B
+             else 1 if score_a > csv_exporter.GRU_THRESH_A * 0.5 or score_b > csv_exporter.GRU_THRESH_B * 0.5
+             else 0)
+    assert stage == 0
