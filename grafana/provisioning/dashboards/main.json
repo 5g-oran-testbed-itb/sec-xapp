@@ -1,950 +1,149 @@
 {
-  "__inputs": [],
-  "__requires": [],
-  "annotations": {
-    "list": [
-      {
-        "builtIn": 1,
-        "datasource": {
-          "type": "grafana",
-          "uid": "-- Grafana --"
-        },
-        "enable": true,
-        "hide": false,
-        "iconColor": "rgba(0, 211, 255, 1)",
-        "name": "Annotations & Alerts",
-        "type": "dashboard"
-      }
-    ]
-  },
-  "description": "Real-time 5G KPM metrics and security detection status from xapp_sec_moni",
-  "editable": true,
-  "fiscalYearStartMonth": 0,
-  "graphTooltip": 1,
-  "id": null,
-  "links": [],
+  "uid": "xapp-live",
+  "title": "xApp Security Monitor — Live",
+  "tags": ["xapp", "security", "live"],
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": { "from": "now-10m", "to": "now" },
+  "schemaVersion": 38,
   "panels": [
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "id": 1, "type": "stat", "title": "LSTM Stage",
+      "gridPos": { "x": 0, "y": 0, "w": 3, "h": 4 },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
           "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "green",
-                  "index": 0,
-                  "text": "\u25cf NORMAL"
-                },
-                "1": {
-                  "color": "yellow",
-                  "index": 1,
-                  "text": "\u26a0 WARNING"
-                },
-                "2": {
-                  "color": "red",
-                  "index": 2,
-                  "text": "\ud83d\udd34 CRITICAL"
-                }
-              },
-              "type": "value"
-            }
+            {"type": "value", "options": {"0": {"text": "NORMAL",   "color": "green"}}},
+            {"type": "value", "options": {"1": {"text": "WARNING",  "color": "yellow"}}},
+            {"type": "value", "options": {"2": {"text": "CRITICAL", "color": "red"}}}
           ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 1
-              },
-              {
-                "color": "red",
-                "value": 2
-              }
-            ]
-          }
+          "thresholds": {"mode": "absolute", "steps": [
+            {"value": null, "color": "green"},
+            {"value": 1,    "color": "yellow"},
+            {"value": 2,    "color": "red"}
+          ]}
         }
       },
-      "gridPos": {
-        "h": 3,
-        "w": 24,
-        "x": 0,
-        "y": 0
-      },
-      "id": 1,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value",
-        "text": {
-          "valueSize": 48
-        }
-      },
-      "title": "Detection Status",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "xapp_detection_stage",
-          "legendFormat": "Stage",
-          "refId": "A"
-        }
-      ]
+      "targets": [{"expr": "xapp_detection_stage", "instant": true, "legendFormat": "LSTM"}]
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "id": 2, "type": "stat", "title": "GRU Stage",
+      "gridPos": { "x": 3, "y": 0, "w": 3, "h": 4 },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "unit": "percentunit",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 0.5
-              },
-              {
-                "color": "red",
-                "value": 0.8
-              }
-            ]
-          },
-          "custom": {
-            "sparkline": {
-              "show": true
-            }
-          }
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 0,
-        "y": 3
-      },
-      "id": 2,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
+          "mappings": [
+            {"type": "value", "options": {"0": {"text": "NORMAL",   "color": "green"}}},
+            {"type": "value", "options": {"1": {"text": "WARNING",  "color": "yellow"}}},
+            {"type": "value", "options": {"2": {"text": "CRITICAL", "color": "red"}}}
           ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "PRB DL",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "xapp_prb_dl_ratio",
-          "legendFormat": "PRB DL",
-          "refId": "A"
+          "thresholds": {"mode": "absolute", "steps": [
+            {"value": null, "color": "green"},
+            {"value": 1,    "color": "yellow"},
+            {"value": 2,    "color": "red"}
+          ]}
         }
-      ]
+      },
+      "targets": [{"expr": "xapp_gru_stage", "instant": true, "legendFormat": "GRU"}]
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "id": 3, "type": "stat", "title": "Alert Type",
+      "gridPos": { "x": 6, "y": 0, "w": 4, "h": 4 },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "unit": "percentunit",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 0.5
-              },
-              {
-                "color": "red",
-                "value": 0.8
-              }
-            ]
-          },
-          "custom": {
-            "sparkline": {
-              "show": true
-            }
-          }
+          "mappings": [
+            {"type": "value", "options": {"0": {"text": "None"}}},
+            {"type": "value", "options": {"1": {"text": "UL Flood",  "color": "orange"}}},
+            {"type": "value", "options": {"2": {"text": "DL Flood",  "color": "orange"}}},
+            {"type": "value", "options": {"3": {"text": "Burst",     "color": "yellow"}}},
+            {"type": "value", "options": {"4": {"text": "RRC Storm", "color": "red"}}}
+          ]
         }
       },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 3
-      },
-      "id": 3,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "PRB UL",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "xapp_prb_ul_ratio",
-          "legendFormat": "PRB UL",
-          "refId": "A"
-        }
-      ]
+      "targets": [{"expr": "xapp_alert_type", "instant": true, "legendFormat": ""}]
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "unit": "none",
-          "min": 0,
-          "max": 15,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 5
-              },
-              {
-                "color": "green",
-                "value": 10
-              }
-            ]
-          }
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 3
-      },
-      "id": 4,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "CQI",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "xapp_cqi",
-          "legendFormat": "CQI",
-          "refId": "A"
-        }
-      ]
+      "id": 4, "type": "stat", "title": "Detect Latency",
+      "gridPos": { "x": 10, "y": 0, "w": 2, "h": 2 },
+      "fieldConfig": {"defaults": {"unit": "ms"}},
+      "targets": [{"expr": "xapp_latency_detect_ms", "instant": true}]
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "unit": "ms",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 50
-              },
-              {
-                "color": "red",
-                "value": 100
-              }
-            ]
-          }
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 3
-      },
-      "id": 5,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "UL Air Delay",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "xapp_air_delay_ul_ms",
-          "legendFormat": "UL Delay",
-          "refId": "A"
-        }
-      ]
+      "id": 5, "type": "stat", "title": "Confirm Latency",
+      "gridPos": { "x": 10, "y": 2, "w": 2, "h": 2 },
+      "fieldConfig": {"defaults": {"unit": "ms"}},
+      "targets": [{"expr": "xapp_latency_confirm_ms", "instant": true}]
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "id": 6, "type": "stat", "title": "Total to Mitigate",
+      "gridPos": { "x": 12, "y": 0, "w": 2, "h": 2 },
+      "fieldConfig": {"defaults": {"unit": "ms"}},
+      "targets": [{"expr": "xapp_latency_total_ms", "instant": true}]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "PRB Utilization DL / UL",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 6 },
       "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "unit": "percentunit",
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 10
-          }
-        },
+        "defaults": {"unit": "percentunit", "min": 0, "max": 1},
         "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "PRB DL"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "PRB UL"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
+          {"matcher": {"id": "byName", "options": "Threshold 70%"},
+           "properties": [{"id": "custom.lineStyle", "value": {"fill": "dash"}},
+                          {"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}}]}
         ]
       },
-      "gridPos": {
-        "h": 8,
-        "w": 15,
-        "x": 0,
-        "y": 19
-      },
-      "id": 6,
-      "options": {
-        "legend": {
-          "calcs": [
-            "last",
-            "max"
-          ],
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "title": "PRB Utilization DL / UL \u2014 Last 5 min",
-      "type": "timeseries",
       "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "xapp_prb_dl_ratio",
-          "legendFormat": "PRB DL",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "xapp_prb_ul_ratio",
-          "legendFormat": "PRB UL",
-          "refId": "B"
-        }
+        {"expr": "xapp_prb_dl_ratio",  "legendFormat": "DL"},
+        {"expr": "xapp_prb_ul_ratio",  "legendFormat": "UL"},
+        {"expr": "0.7 + 0 * xapp_prb_dl_ratio", "legendFormat": "Threshold 70%"}
       ]
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "fixedColor": "green",
-            "mode": "fixed"
-          },
-          "unit": "none",
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 10
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 0.5
-              }
-            ]
-          }
-        }
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 9,
-        "x": 15,
-        "y": 19
-      },
-      "id": 7,
-      "options": {
-        "legend": {
-          "calcs": [
-            "last",
-            "max"
-          ],
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "title": "LSTM Anomaly Score (threshold = 0.5)",
-      "type": "timeseries",
+      "id": 8, "type": "timeseries", "title": "Signaling & Burst Indicators",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 6 },
+      "fieldConfig": {"defaults": {"min": 0}},
       "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "xapp_anomaly_score",
-          "legendFormat": "Anomaly Score",
-          "refId": "A"
-        }
+        {"expr": "xapp_rach_preamble",    "legendFormat": "RACH Preamble"},
+        {"expr": "xapp_empty_ind_rate",   "legendFormat": "Empty Ind Rate (RRC proxy)"},
+        {"expr": "xapp_prb_burst_index",  "legendFormat": "PRB Burst Index"}
       ]
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "id": 9, "type": "timeseries", "title": "LSTM Anomaly Score (v16 thresh=0.21)",
+      "gridPos": { "x": 0, "y": 10, "w": 12, "h": 6 },
       "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "unit": "ms",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 5000
-              },
-              {
-                "color": "red",
-                "value": 10000
-              }
-            ]
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "\u2014",
-                  "index": 0
-                }
-              }
-            }
-          ]
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 7
-      },
-      "id": 8,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "DETECT LATENCY",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "xapp_latency_detect_ms",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "unit": "ms",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 5000
-              },
-              {
-                "color": "red",
-                "value": 15000
-              }
-            ]
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "\u2014",
-                  "index": 0
-                }
-              }
-            }
-          ]
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 7
-      },
-      "id": 9,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "CONFIRM LATENCY",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "xapp_latency_confirm_ms",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "unit": "ms",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 10000
-              },
-              {
-                "color": "red",
-                "value": 20000
-              }
-            ]
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "\u2014",
-                  "index": 0
-                }
-              }
-            }
-          ]
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 7
-      },
-      "id": 10,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "TOTAL TO MITIGATE",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "xapp_latency_total_ms",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "unit": "percentunit",
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 10
-          }
-        },
+        "defaults": {"min": 0},
         "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "PRB DL"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "PRB UL"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Stage"
-            },
-            "properties": [
-              {
-                "id": "custom.lineWidth",
-                "value": 0
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 20
-              },
-              {
-                "id": "custom.axisPlacement",
-                "value": "hidden"
-              },
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": false,
-                  "viz": false
-                }
-              },
-              {
-                "id": "color.mode",
-                "value": "thresholds"
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "transparent",
-                      "value": null
-                    },
-                    {
-                      "color": "yellow",
-                      "value": 0.4
-                    },
-                    {
-                      "color": "red",
-                      "value": 0.9
-                    }
-                  ]
-                }
-              }
-            ]
-          }
+          {"matcher": {"id": "byName", "options": "Threshold 0.21"},
+           "properties": [{"id": "custom.lineStyle", "value": {"fill": "dash"}},
+                          {"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}}]}
         ]
       },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 11
-      },
-      "id": 11,
-      "options": {
-        "legend": {
-          "calcs": [
-            "last",
-            "max"
-          ],
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "timeFrom": "10m",
-      "title": "PRB DL / UL + Mitigation Stage \u2014 Last 10 min",
-      "type": "timeseries",
       "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "xapp_prb_dl_ratio",
-          "legendFormat": "PRB DL",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "xapp_prb_ul_ratio",
-          "legendFormat": "PRB UL",
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "xapp_detection_stage / 2",
-          "legendFormat": "Stage",
-          "refId": "C"
-        }
+        {"expr": "xapp_anomaly_score", "legendFormat": "LSTM Score"},
+        {"expr": "0.21 + 0 * xapp_anomaly_score", "legendFormat": "Threshold 0.21"}
       ]
+    },
+    {
+      "id": 10, "type": "timeseries", "title": "GRU Score A & B",
+      "gridPos": { "x": 12, "y": 10, "w": 12, "h": 6 },
+      "fieldConfig": {"defaults": {"min": 0}},
+      "targets": [
+        {"expr": "xapp_gru_score_a", "legendFormat": "GRU-A (thresh=0.002881)"},
+        {"expr": "xapp_gru_score_b", "legendFormat": "GRU-B (thresh=0.003363)"},
+        {"expr": "0.002881 + 0 * xapp_gru_score_a", "legendFormat": "Thresh A"},
+        {"expr": "0.003363 + 0 * xapp_gru_score_b", "legendFormat": "Thresh B"}
+      ]
+    },
+    {
+      "id": 11, "type": "timeseries", "title": "Stage Timeline — PRB + LSTM + GRU (last 30m)",
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 7 },
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}},
+      "targets": [
+        {"expr": "xapp_prb_dl_ratio",          "legendFormat": "PRB DL"},
+        {"expr": "xapp_prb_ul_ratio",          "legendFormat": "PRB UL"},
+        {"expr": "xapp_detection_stage / 2",   "legendFormat": "LSTM Stage (norm)"},
+        {"expr": "xapp_gru_stage / 2",         "legendFormat": "GRU Stage (norm)"}
+      ],
+      "options": {"tooltip": {"mode": "multi"}}
     }
-  ],
-  "refresh": "2s",
-  "schemaVersion": 39,
-  "tags": [
-    "xapp",
-    "5g",
-    "security"
-  ],
-  "time": {
-    "from": "now-5m",
-    "to": "now"
-  },
-  "timepicker": {},
-  "timezone": "browser",
-  "title": "xApp Security Monitor \u2014 Main",
-  "uid": "xapp-main-v1",
-  "version": 1
+  ]
 }
