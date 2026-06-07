@@ -108,6 +108,13 @@ KNOWN_EVAL = {
         "burst":     {"recall": 0.614,  "f1": 0.736},
         "rrc_storm": {"recall": 0.838,  "f1": 0.882},
     },
+    "lstm_tuned": {
+        "overall":   {"recall": 0.9661, "precision": 0.9220, "f1": 0.9435, "fpr": 0.0839},
+        "ul_flood":  {"recall": 0.992,  "f1": 0.944},
+        "dl_flood":  {"recall": 0.997,  "f1": 0.975},
+        "burst":     {"recall": 0.915,  "f1": 0.944},
+        "rrc_storm": {"recall": 0.988,  "f1": 0.967},
+    },
     "gru_tuned": {
         "overall":   {"recall": 0.932,  "precision": 0.930, "f1": 0.930, "fpr": 0.053},
         "ul_flood":  {"recall": 0.996,  "f1": 0.970},

@@ -9,7 +9,7 @@
   "panels": [
     { "id": 1, "type": "text", "title": "",
       "gridPos": {"x": 0, "y": 0, "w": 24, "h": 2},
-      "options": {"mode": "markdown", "content": "## Known Attack Dataset — `dataset_attack_mei.csv` (17,941 samples, 5 labels)\nMetrics from offline evaluation. Stage1 = per-window, Stage2/Hybrid = 5× consecutive confirmation."}
+      "options": {"mode": "markdown", "content": "## Known Attack Dataset — `dataset_attack_mei.csv` (17,941 samples, 5 labels)\nMetrics from offline evaluation. Stage1 = per-window, Stage2/Hybrid = 5× consecutive confirmation.\n\n**LSTM Tuned:** thresh_a=0.18 (v16), thresh_b=0.20 (v22) — tuned from baseline 79.2% → 96.6% recall"}
     },
     { "id": 10, "type": "stat", "title": "Rule-Based",
       "gridPos": {"x": 0, "y": 2, "w": 4, "h": 5},
@@ -21,7 +21,7 @@
         {"expr": "xapp_eval_fpr_v2{model='rule'}",                    "instant": true, "legendFormat": "FPR Stage1"}
       ]
     },
-    { "id": 11, "type": "stat", "title": "LSTM Ensemble",
+    { "id": 11, "type": "stat", "title": "LSTM (baseline)",
       "gridPos": {"x": 4, "y": 2, "w": 4, "h": 5},
       "fieldConfig": {"defaults": {"decimals": 3}},
       "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "vertical"},
@@ -31,8 +31,18 @@
         {"expr": "xapp_eval_fpr_v2{model='lstm'}",                    "instant": true, "legendFormat": "FPR Stage1"}
       ]
     },
-    { "id": 12, "type": "stat", "title": "GRU Tuned",
+    { "id": 15, "type": "stat", "title": "LSTM Tuned",
       "gridPos": {"x": 8, "y": 2, "w": 4, "h": 5},
+      "fieldConfig": {"defaults": {"decimals": 3}},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "vertical"},
+      "targets": [
+        {"expr": "xapp_eval_recall_v2{model='lstm_tuned',attack='all'}",    "instant": true, "legendFormat": "Recall"},
+        {"expr": "xapp_eval_f1_v2{model='lstm_tuned',attack='all'}",        "instant": true, "legendFormat": "F1"},
+        {"expr": "xapp_eval_fpr_v2{model='lstm_tuned'}",                    "instant": true, "legendFormat": "FPR Stage1"}
+      ]
+    },
+    { "id": 12, "type": "stat", "title": "GRU Tuned",
+      "gridPos": {"x": 12, "y": 2, "w": 4, "h": 5},
       "fieldConfig": {"defaults": {"decimals": 3}},
       "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "vertical"},
       "targets": [
@@ -42,7 +52,7 @@
       ]
     },
     { "id": 13, "type": "stat", "title": "Hybrid Rule+LSTM",
-      "gridPos": {"x": 12, "y": 2, "w": 5, "h": 5},
+      "gridPos": {"x": 16, "y": 2, "w": 4, "h": 5},
       "fieldConfig": {"defaults": {"decimals": 3}},
       "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "vertical"},
       "targets": [
@@ -52,7 +62,7 @@
       ]
     },
     { "id": 14, "type": "stat", "title": "Hybrid Rule+GRU",
-      "gridPos": {"x": 17, "y": 2, "w": 7, "h": 5},
+      "gridPos": {"x": 20, "y": 2, "w": 4, "h": 5},
       "fieldConfig": {"defaults": {"decimals": 3}},
       "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "vertical"},
       "targets": [
@@ -66,8 +76,7 @@
       "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}},
       "options": {"orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"]}},
       "targets": [
-        {"expr": "xapp_eval_recall_v2{attack='ul_flood'}", "instant": true,
-         "legendFormat": "{{model}}"}
+        {"expr": "xapp_eval_recall_v2{attack='ul_flood'}", "instant": true, "legendFormat": "{{model}}"}
       ]
     },
     { "id": 21, "type": "bargauge", "title": "Per-Attack Recall — DL Flood",
@@ -75,8 +84,7 @@
       "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}},
       "options": {"orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"]}},
       "targets": [
-        {"expr": "xapp_eval_recall_v2{attack='dl_flood'}", "instant": true,
-         "legendFormat": "{{model}}"}
+        {"expr": "xapp_eval_recall_v2{attack='dl_flood'}", "instant": true, "legendFormat": "{{model}}"}
       ]
     },
     { "id": 22, "type": "bargauge", "title": "Per-Attack Recall — Burst ON/OFF",
@@ -84,8 +92,7 @@
       "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}},
       "options": {"orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"]}},
       "targets": [
-        {"expr": "xapp_eval_recall_v2{attack='burst'}", "instant": true,
-         "legendFormat": "{{model}}"}
+        {"expr": "xapp_eval_recall_v2{attack='burst'}", "instant": true, "legendFormat": "{{model}}"}
       ]
     },
     { "id": 23, "type": "bargauge", "title": "Per-Attack Recall — RRC Storm",
@@ -93,8 +100,7 @@
       "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}},
       "options": {"orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"]}},
       "targets": [
-        {"expr": "xapp_eval_recall_v2{attack='rrc_storm'}", "instant": true,
-         "legendFormat": "{{model}}"}
+        {"expr": "xapp_eval_recall_v2{attack='rrc_storm'}", "instant": true, "legendFormat": "{{model}}"}
       ]
     },
     { "id": 30, "type": "bargauge", "title": "FPR Comparison (Stage1) — Lower is Better",

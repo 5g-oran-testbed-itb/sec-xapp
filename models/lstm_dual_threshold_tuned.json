@@ -1,0 +1,21 @@
+{
+  "model_a": "security_model_v16.onnx",
+  "thresh_a": 0.18,
+  "model_b": "security_model_v22.onnx",
+  "thresh_b": 0.20,
+  "num_features": 25,
+  "min_consec": 3,
+  "note": "Tuned from baseline ta=0.21/tb=0.50 (recall=79.2%) to ta=0.18/tb=0.20 (recall=96.6%)",
+  "results": {
+    "recall": 0.9661,
+    "precision": 0.9220,
+    "f1": 0.9435,
+    "fpr_stage1": 0.0839,
+    "per_attack": {
+      "ul_flood": 0.992,
+      "dl_flood": 0.997,
+      "burst": 0.915,
+      "rrc_storm": 0.988
+    }
+  }
+}
