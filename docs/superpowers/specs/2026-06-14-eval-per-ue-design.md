@@ -91,9 +91,11 @@ anomaly   = mse > threshold
 
 MSE di-align ke timestep terakhir setiap window: `anomaly[i]` ↔ `timestep[i + seq_len - 1]`.
 
-Models dan thresholds:
-- LSTM-UE v1: `models/lstm_ue_v1.pt`, scaler `models/lstm_ue_v1_scaler.pkl`, threshold `2793713.03` (P99, `validation_set`)
-- GRU-UE v1: `models/gru_ue_v1.pt`, scaler `models/gru_ue_v1_scaler.pkl`, threshold `2793671.0` (P99, `validation_set`)
+Models dan thresholds — **dibaca dari JSON, bukan hardcoded**:
+- LSTM-UE v1: `models/lstm_ue_v1.pt`, scaler `models/lstm_ue_v1_scaler.pkl`, threshold dari `models/lstm_ue_v1_threshold.json["threshold"]` (default `2793713.03`, P99 validation)
+- GRU-UE v1: `models/gru_ue_v1.pt`, scaler `models/gru_ue_v1_scaler.pkl`, threshold dari `models/gru_ue_v1_threshold.json["threshold"]` (default `2793671.0`, P99 validation)
+
+Ini memungkinkan retrain model tanpa perlu edit source code.
 
 **Inference latency** diukur per batch: `time.perf_counter()` sebelum dan sesudah `model.compute_reconstruction_error()`, dikumpulkan lalu dihitung mean/median/P95.
 
@@ -136,10 +138,10 @@ Akurasi tidak dilaporkan (distribusi label 5810:2323 membuat accuracy tidak info
 
 ### Detection Latency
 
-Definisi: untuk setiap **attack segment** (blok rows berurutan dengan label>0 per RNTI), hitung:
+**Definisi segment:** blok timestep berurutan di mana `(label, rnti)` konstan dan `label > 0`. Segment boundary terjadi saat label berubah ATAU rnti berubah. Ini penting karena dataset mengandung skenario seperti "UL Flood UE1 → recovery → UL Flood UE2" yang keduanya `label=1` tetapi merupakan serangan berbeda pada RNTI berbeda.
 
-```
-latency = timestamp_first_alert - timestamp_attack_start
+```python
+latency = timestamp_first_alert - timestamp_segment_start
 ```
 
 Jika dalam satu segment tidak ada alert sama sekali → tidak masuk perhitungan latency (terhitung FN). Laporkan: `mean`, `median` per konfigurasi per attack class.
@@ -158,7 +160,14 @@ recall_k = (windows berlabel k yang terdeteksi anomali) / (semua windows berlabe
 
 ### ROC-AUC
 
-Hanya `lstm_only` dan `gru_only`. Input ke `sklearn.metrics.roc_curve`: `y_true` = binary (label>0), `y_score` = raw MSE. Rule-based ditampilkan sebagai titik operasi (★) di plot yang sama.
+Hanya `lstm_only` dan `gru_only`. Input ke `sklearn.metrics.roc_curve`:
+
+```python
+y_true  = [0, ..., 0,   1, ..., 1]  # validation windows (all 0) + attack windows (label>0 → 1)
+y_score = [mse_val...,  mse_attack...]
+```
+
+Menggabungkan validation (pure benign) dan attack dataset memastikan ROC mengukur separasi benign vs attack yang sesungguhnya — tidak terkontaminasi baseline/recovery dalam attack session. Rule-based ditampilkan sebagai satu titik operasi (★) di plot yang sama.
 
 ### Pooling
 
