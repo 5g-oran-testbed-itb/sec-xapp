@@ -32,6 +32,8 @@ RAN_GNB_BIN="./srsRAN_Project/build/apps/gnb/gnb"
 RAN_GNB_CONF="configs/cots_n78_copied.yml"
 
 PHASE2_FLAG="/tmp/xapp_c_phase2_start"
+MODE_FILE="/tmp/xapp_detection_mode"
+IDS_MODE_FILE="/tmp/xapp_ids_mode"
 
 # =============================================================
 # Cleanup — jalankan saat script exit (termasuk tmux kill-session)
@@ -62,7 +64,7 @@ pkill -9 -f "nearRT-RIC" 2>/dev/null
 pkill -9 -f "xapp_sec_moni" 2>/dev/null
 fuser -k -9 36421/sctp 2>/dev/null
 fuser -k -9 36422/sctp 2>/dev/null
-rm -f "$PHASE2_FLAG"
+rm -f "$PHASE2_FLAG" "$MODE_FILE" "$IDS_MODE_FILE"
 sleep 1
 
 echo "=============================================="
@@ -103,9 +105,45 @@ tmux send-keys -t "$SESSION:0.1" \
      'cd $RAN_GNB_DIR && sudo pkill -9 gnb 2>/dev/null; sleep 1; \
       sudo stdbuf -oL $RAN_GNB_BIN -c $RAN_GNB_CONF 2>&1 | tee /tmp/gnb.log'" Enter
 
-# Pane 2: Prompt — tunggu UE attach (Kiri Bawah)
+# Pane 2: Prompt — pilih mode + ids-mode + tunggu UE attach (Kiri Bawah)
 tmux send-keys -t "$SESSION:0.2" \
     "echo '' && \
+     echo '  ╔══════════════════════════════════════╗' && \
+     echo '  ║   O-RAN Security xApp — Mode Setup   ║' && \
+     echo '  ╚══════════════════════════════════════╝' && \
+     echo '' && \
+     echo '  [1/2] Cell-level detection (--mode):' && \
+     echo '    1) Rule-Based IDS only  (Stage 1 saja)' && \
+     echo '    2) LSTM only            (Stage 2 saja)' && \
+     echo '    3) Hybrid               (Rule + LSTM, default)' && \
+     echo '' && \
+     read -p '  >> Pilihan [1/2/3, default=3]: ' _mode_choice && \
+     case \"\$_mode_choice\" in \
+       1) echo rule   > '$MODE_FILE'; _mode_label=\"Rule-Based Only\" ;; \
+       2) echo lstm   > '$MODE_FILE'; _mode_label=\"LSTM Only\" ;; \
+       *) echo hybrid > '$MODE_FILE'; _mode_label=\"Hybrid (Rule+LSTM)\" ;; \
+     esac && \
+     echo '' && \
+     echo \"  Mode cell-level: \$_mode_label\" && \
+     echo '' && \
+     echo '  [2/2] Per-UE IDS (--ids-mode):' && \
+     echo '    1) rule-only     (dataset collection, tanpa ML)' && \
+     echo '    2) lstm-hybrid   (Rule + LSTM-UE, rekomendasi evaluasi)' && \
+     echo '    3) gru-hybrid    (Rule + GRU-UE)' && \
+     echo '    4) lstm-only     (ablasi ML saja)' && \
+     echo '    5) gru-only      (ablasi ML saja)' && \
+     echo '' && \
+     read -p '  >> Pilihan [1-5, default=1]: ' _ids_choice && \
+     case \"\$_ids_choice\" in \
+       2) echo 'lstm-hybrid' > '$IDS_MODE_FILE'; _ids_label=\"lstm-hybrid\" ;; \
+       3) echo 'gru-hybrid'  > '$IDS_MODE_FILE'; _ids_label=\"gru-hybrid\" ;; \
+       4) echo 'lstm-only'   > '$IDS_MODE_FILE'; _ids_label=\"lstm-only\" ;; \
+       5) echo 'gru-only'    > '$IDS_MODE_FILE'; _ids_label=\"gru-only\" ;; \
+       *) echo 'rule-only'   > '$IDS_MODE_FILE'; _ids_label=\"rule-only\" ;; \
+     esac && \
+     echo '' && \
+     echo \"  Mode per-UE IDS: \$_ids_label\" && \
+     echo '' && \
      echo '  Checklist sebelum ENTER:' && \
      echo '  [1] RIC: tunggu \"E2AP listening on :36421\" (Pane 0)' && \
      echo '  [2] gNB: tunggu E2 Setup sukses (Pane 1)' && \
@@ -114,15 +152,17 @@ tmux send-keys -t "$SESSION:0.2" \
      read -p '  >> Tekan ENTER setelah UE attach... ' && \
      touch '$PHASE2_FLAG' && \
      echo '' && \
-     echo '  xapp_sec_moni mulai di Pane 3.' && \
+     echo \"  xapp_sec_moni mulai di Pane 3 (cell: \$_mode_label | per-UE: \$_ids_label).\" && \
      echo '  Pindah ke Window 1 (Record) untuk ganti label: Ctrl+B lalu 1'" Enter
 
-# Pane 3: xapp_sec_moni — tunggu PHASE2_FLAG, lalu mulai (Kanan Bawah)
+# Pane 3: xapp_sec_moni — tunggu PHASE2_FLAG + baca mode, lalu mulai (Kanan Bawah)
 tmux send-keys -t "$SESSION:0.3" \
     "echo '=== [Pane 3] xapp_sec_moni — menunggu UE attach ===' && \
      until [ -f '$PHASE2_FLAG' ]; do sleep 1; done && \
-     echo '=== Memulai xapp_sec_moni (label=0 / Normal) ===' && \
-     '$XAPP_BIN' -c '$XAPP_CONF' --label 0" Enter
+     _det_mode=\$(cat '$MODE_FILE' 2>/dev/null || echo hybrid) && \
+     _ids_mode=\$(cat '$IDS_MODE_FILE' 2>/dev/null || echo rule-only) && \
+     echo \"=== Memulai xapp_sec_moni | mode: \$_det_mode | ids-mode: \$_ids_mode | label=0 ===\" && \
+     '$XAPP_BIN' -c '$XAPP_CONF' --label 0 --mode \"\$_det_mode\" --ids-mode \"\$_ids_mode\"" Enter
 
 # Fokus ke Pane 2 (prompt) saat attach
 tmux select-pane -t "$SESSION:0.2"
