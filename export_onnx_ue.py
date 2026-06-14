@@ -132,6 +132,7 @@ def main():
         input_names=["input"],
         output_names=["mse"],
         dynamic_axes={"input": {0: "batch_size"}, "mse": {0: "batch_size"}},
+        dynamo=False,
     )
     size_kb = os.path.getsize(args.out) / 1024
     print(f"[OK] {args.out}  ({size_kb:.1f} KB)")
