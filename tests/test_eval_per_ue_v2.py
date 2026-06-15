@@ -137,3 +137,45 @@ def test_no_fire_when_below_all_thresholds():
     X = _feat_matrix([row] * 20)
     fires = run_rule_engine(X)
     assert not fires.any()
+
+
+import pickle
+from evaluate_per_ue_v2 import load_models, score_ml, build_windows
+
+def test_load_models_returns_dict():
+    models = load_models()
+    assert "lstm" in models and "gru" in models
+    lstm_model, lstm_scaler, lstm_thresh = models["lstm"]
+    gru_model,  gru_scaler,  gru_thresh  = models["gru"]
+    assert lstm_thresh > 0
+    assert gru_thresh  > 0
+    assert lstm_model.seq_len == 10
+    assert gru_model.seq_len  == 10
+
+
+def test_score_ml_output_shape():
+    models = load_models()
+    gru, scaler, thresh = models["gru"]
+    # 20 rows of zeros → 11 windows
+    X = np.zeros((20, 15), dtype=np.float32)
+    mse, latencies = score_ml(gru, scaler, X)
+    assert mse.shape == (11,)            # N - seq_len + 1 = 20 - 10 + 1
+    assert len(latencies) == 11          # one latency measurement per window
+    assert all(lat >= 0 for lat in latencies)
+
+
+def test_score_ml_too_short_returns_empty():
+    models = load_models()
+    gru, scaler, _ = models["gru"]
+    X = np.zeros((5, 15), dtype=np.float32)
+    mse, latencies = score_ml(gru, scaler, X)
+    assert len(mse) == 0
+    assert len(latencies) == 0
+
+
+def test_score_ml_mse_nonnegative():
+    models = load_models()
+    lstm, scaler, _ = models["lstm"]
+    X = np.random.rand(15, 15).astype(np.float32)
+    mse, _ = score_ml(lstm, scaler, X)
+    assert (mse >= 0).all()

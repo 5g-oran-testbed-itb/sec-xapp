@@ -159,3 +159,68 @@ def run_rule_engine(X: np.ndarray) -> np.ndarray:
         rule_fires[t] = (mask > 0)
 
     return rule_fires
+
+
+# ── Section 3: ML scoring + inference latency ─────────────────────────────────
+
+def load_models(
+    lstm_pt:    str = "models/lstm_ue_v1.pt",
+    lstm_pkl:   str = "models/lstm_ue_v1_scaler.pkl",
+    lstm_json:  str = "models/lstm_ue_v1_threshold.json",
+    gru_pt:     str = "models/gru_ue_v1.pt",
+    gru_pkl:    str = "models/gru_ue_v1_scaler.pkl",
+    gru_json:   str = "models/gru_ue_v1_threshold.json",
+) -> dict:
+    """Returns dict with 'lstm' and 'gru' keys, each a (model, scaler, threshold) tuple."""
+    print("[*] Loading GRU-UE v1...")
+    gru = GRUAutoencoder.load(gru_pt, GRU_CFG)
+    gru.eval()
+    with open(gru_pkl, "rb") as f:
+        gru_scaler = pickle.load(f)
+    gru_thresh = json.load(open(gru_json))["threshold"]
+    print(f"    threshold={gru_thresh:.0f}")
+
+    print("[*] Loading LSTM-UE v1...")
+    lstm = LSTMAutoencoder.load(lstm_pt, LSTM_CFG)
+    lstm.eval()
+    with open(lstm_pkl, "rb") as f:
+        lstm_scaler = pickle.load(f)
+    lstm_thresh = json.load(open(lstm_json))["threshold"]
+    print(f"    threshold={lstm_thresh:.0f}")
+
+    return {
+        "lstm": (lstm, lstm_scaler, lstm_thresh),
+        "gru":  (gru,  gru_scaler,  gru_thresh),
+    }
+
+
+def score_ml(
+    model, scaler, X_raw: np.ndarray, batch: int = 256
+) -> tuple[np.ndarray, list[float]]:
+    """
+    Score all windows from X_raw.
+    X_raw: (N, 15) unscaled features.
+    Returns:
+      mse (N-9,) float32 — MSE[i] aligns to timestep i+9 (last row of window)
+      latency_ms (list of float) — per-window inference time in milliseconds
+    """
+    X_scaled = scaler.transform(X_raw).astype(np.float32)
+    wins = build_windows(X_scaled, SEQ_LEN)
+    if len(wins) == 0:
+        return np.array([], dtype=np.float32), []
+
+    mse_parts: list[np.ndarray] = []
+    latencies: list[float] = []
+    model.eval()
+
+    for i in range(0, len(wins), batch):
+        chunk = torch.tensor(wins[i:i + batch])
+        t0 = time.perf_counter()
+        err = model.compute_reconstruction_error(chunk)
+        t1 = time.perf_counter()
+        mse_parts.append(err.detach().numpy())
+        n = len(chunk)
+        per_win_ms = (t1 - t0) * 1000.0 / n
+        latencies.extend([per_win_ms] * n)
+
+    return np.concatenate(mse_parts).astype(np.float32), latencies
