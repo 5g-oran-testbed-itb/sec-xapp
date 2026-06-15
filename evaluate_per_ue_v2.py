@@ -177,7 +177,8 @@ def load_models(
     gru.eval()
     with open(gru_pkl, "rb") as f:
         gru_scaler = pickle.load(f)
-    gru_thresh = json.load(open(gru_json))["threshold"]
+    with open(gru_json) as f:
+        gru_thresh = json.load(f)["threshold"]
     print(f"    threshold={gru_thresh:.0f}")
 
     print("[*] Loading LSTM-UE v1...")
@@ -185,7 +186,8 @@ def load_models(
     lstm.eval()
     with open(lstm_pkl, "rb") as f:
         lstm_scaler = pickle.load(f)
-    lstm_thresh = json.load(open(lstm_json))["threshold"]
+    with open(lstm_json) as f:
+        lstm_thresh = json.load(f)["threshold"]
     print(f"    threshold={lstm_thresh:.0f}")
 
     return {
