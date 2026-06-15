@@ -321,3 +321,40 @@ def test_save_results_json_creates_file():
         data = json.load(open(path))
         assert "metadata" in data and "results" in data
         assert "rule_only" in data["results"]
+
+
+import subprocess
+
+
+@pytest.mark.integration
+def test_end_to_end_smoke(tmp_path):
+    """Full pipeline run — requires actual dataset files."""
+    val_path    = "csv/dataset_validation_ue_juni.csv"
+    attack_path = "csv/dataset_attack_ue_juni.csv"
+    if not (os.path.exists(val_path) and os.path.exists(attack_path)):
+        pytest.skip("Dataset files not present")
+
+    result = subprocess.run(
+        ["./venv/bin/python3", "evaluate_per_ue_v2.py",
+         "--val", val_path, "--attack", attack_path,
+         "--output", str(tmp_path), "--save-figures"],
+        capture_output=True, text=True, timeout=300
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+
+    # JSON exists
+    jsons = list(tmp_path.glob("eval_per_ue_v2_*.json"))
+    assert len(jsons) == 1
+    data = json.load(open(jsons[0]))
+    assert set(data["results"].keys()) == {
+        "rule_only", "lstm_only", "gru_only", "lstm_hybrid", "gru_hybrid"
+    }
+    for cfg in data["results"].values():
+        assert "recall" in cfg
+        assert "f1" in cfg
+        assert "confusion_matrix" in cfg
+
+    # PNGs exist
+    for fname in ["eval_confusion.png", "eval_per_class.png",
+                  "eval_latency.png", "eval_roc.png"]:
+        assert (tmp_path / fname).exists(), f"Missing {fname}"
