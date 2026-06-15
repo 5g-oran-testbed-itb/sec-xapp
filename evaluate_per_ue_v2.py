@@ -652,6 +652,12 @@ def _pool_per_rnti(by_rnti: dict, models: dict, thresh_lstm: float, thresh_gru: 
         lstm_lats_all.extend(llats)
         gru_lats_all.extend(glats)
 
+    if not all_rule:
+        raise ValueError(
+            "No valid RNTIs found in attack dataset "
+            f"(all have fewer than {SEQ_LEN} rows)"
+        )
+
     return {
         "rule_fires":   np.concatenate(all_rule),
         "lstm_fires":   np.concatenate(all_lstm),
