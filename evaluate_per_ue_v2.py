@@ -282,7 +282,7 @@ def find_attack_segments(
     N = len(labels)
     i = 0
     while i < N:
-        if labels[i] == 0:
+        if labels[i] <= 0:
             i += 1
             continue
         j = i + 1
