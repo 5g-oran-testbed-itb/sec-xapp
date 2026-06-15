@@ -179,3 +179,89 @@ def test_score_ml_mse_nonnegative():
     X = np.random.rand(15, 15).astype(np.float32)
     mse, _ = score_ml(lstm, scaler, X)
     assert (mse >= 0).all()
+
+
+from evaluate_per_ue_v2 import (
+    compute_cm, compute_fpr_val, compute_per_class_recall,
+    find_attack_segments, compute_detection_latency,
+    compute_inference_latency, compute_roc_auc,
+)
+
+def test_compute_cm_basic():
+    preds = np.array([True, True, False, False], dtype=bool)
+    labels = np.array([1, 0, 1, 0], dtype=np.int32)
+    cm = compute_cm(preds, labels)
+    assert cm["tp"] == 1
+    assert cm["fp"] == 1
+    assert cm["tn"] == 1
+    assert cm["fn"] == 1
+    assert cm["recall"]    == pytest.approx(0.5)
+    assert cm["precision"] == pytest.approx(0.5)
+    assert cm["f1"]        == pytest.approx(0.5)
+
+
+def test_compute_fpr_val():
+    # 10 val windows, 2 false alerts → FPR = 0.2
+    val_fires = np.array([True, False, True, False, False,
+                          False, False, False, False, False])
+    fpr = compute_fpr_val(val_fires, n_val_windows=10)
+    assert fpr == pytest.approx(0.2)
+
+
+def test_compute_per_class_recall():
+    # 4 UL Flood windows (label=1), 2 detected
+    preds  = np.array([True, True, False, False], dtype=bool)
+    labels = np.array([1, 1, 1, 1], dtype=np.int32)
+    pcr = compute_per_class_recall(preds, labels)
+    assert pcr["ul_flood"] == pytest.approx(0.5)
+    assert pcr["dl_flood"] is None   # no dl_flood windows
+
+
+def test_find_attack_segments_splits_on_rnti_change():
+    # UL Flood on RNTI 1 then UL Flood on RNTI 7 → two segments
+    labels  = np.array([1, 1, 1, 1, 1], dtype=np.int32)
+    ts_ms   = np.array([0, 1000, 2000, 3000, 4000], dtype=np.float64)
+    rntis   = np.array([1, 1, 7, 7, 7], dtype=np.int32)
+    segs = find_attack_segments(labels, ts_ms, rntis)
+    assert len(segs) == 2
+    assert segs[0]["rnti"] == 1 and segs[0]["end_idx"] == 1
+    assert segs[1]["rnti"] == 7 and segs[1]["start_idx"] == 2
+
+
+def test_compute_detection_latency_basic():
+    # Segment: label=1, RNTI=1, timestamps 0-5s (6 rows).
+    # Fires at index 3 → latency = (3000 - 0) / 1000 = 3.0 s
+    labels  = np.array([1]*6, dtype=np.int32)
+    ts_ms   = np.array([0, 1000, 2000, 3000, 4000, 5000], dtype=np.float64)
+    rntis   = np.array([1]*6, dtype=np.int32)
+    fires   = np.array([False, False, False, True, True, True], dtype=bool)
+    result  = compute_detection_latency(fires, labels, ts_ms, rntis)
+    assert result["ul_flood"]["mean_s"]   == pytest.approx(3.0)
+    assert result["ul_flood"]["median_s"] == pytest.approx(3.0)
+
+
+def test_compute_detection_latency_no_alert_excluded():
+    # Segment fires nowhere → n_segments=0
+    labels = np.array([1]*5, dtype=np.int32)
+    ts_ms  = np.arange(5, dtype=np.float64) * 1000
+    rntis  = np.array([1]*5, dtype=np.int32)
+    fires  = np.zeros(5, dtype=bool)
+    result = compute_detection_latency(fires, labels, ts_ms, rntis)
+    assert result["ul_flood"]["n_segments"] == 0
+    assert result["ul_flood"]["mean_s"] is None
+
+
+def test_compute_inference_latency():
+    lats = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+    result = compute_inference_latency(lats)
+    assert result["mean_ms"]   == pytest.approx(5.5)
+    assert result["median_ms"] == pytest.approx(5.5)
+    assert result["p95_ms"]    == pytest.approx(9.55, rel=1e-2)
+
+
+def test_compute_roc_auc_perfect():
+    # Perfect separation: val MSE all low, attack MSE all high
+    mse_val    = np.array([1.0, 2.0, 1.5], dtype=np.float32)
+    mse_attack = np.array([100.0, 200.0, 150.0], dtype=np.float32)
+    fpr, tpr, auc_val = compute_roc_auc(mse_val, mse_attack)
+    assert auc_val == pytest.approx(1.0)

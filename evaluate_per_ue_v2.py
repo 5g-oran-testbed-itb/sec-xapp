@@ -226,3 +226,139 @@ def score_ml(
         latencies.extend([per_win_ms] * n)
 
     return np.concatenate(mse_parts).astype(np.float32), latencies
+
+
+# ── Section 4: Metrics ────────────────────────────────────────────────────────
+
+def compute_cm(preds_binary: np.ndarray, labels_attack: np.ndarray) -> dict:
+    """
+    preds_binary: (N,) bool — True = anomaly predicted
+    labels_attack: (N,) int — 0=benign, >0=attack
+    Returns: {tp, fp, tn, fn, recall, precision, f1}
+    """
+    is_attack = labels_attack > 0
+    TP = int(( preds_binary &  is_attack).sum())
+    FP = int(( preds_binary & ~is_attack).sum())
+    TN = int((~preds_binary & ~is_attack).sum())
+    FN = int((~preds_binary &  is_attack).sum())
+    precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
+    recall    = TP / (TP + FN) if (TP + FN) > 0 else 0.0
+    f1        = (2 * precision * recall / (precision + recall)
+                 if (precision + recall) > 0 else 0.0)
+    return {"tp": TP, "fp": FP, "tn": TN, "fn": FN,
+            "recall": round(recall, 4), "precision": round(precision, 4),
+            "f1": round(f1, 4)}
+
+
+def compute_fpr_val(val_fires: np.ndarray, n_val_windows: int) -> float:
+    """False positive rate on pure-benign validation windows."""
+    if n_val_windows == 0:
+        return 0.0
+    return round(float(val_fires.sum()) / n_val_windows, 4)
+
+
+def compute_per_class_recall(
+    preds_binary: np.ndarray, labels_attack: np.ndarray
+) -> dict[str, float | None]:
+    """TPR for each attack class. None if no windows of that class."""
+    result: dict[str, float | None] = {}
+    for lbl, name in LABEL_NAMES.items():
+        mask = labels_attack == lbl
+        if mask.sum() == 0:
+            result[name] = None
+        else:
+            result[name] = round(float(preds_binary[mask].sum()) / mask.sum(), 4)
+    return result
+
+
+def find_attack_segments(
+    labels: np.ndarray, timestamps_ms: np.ndarray, rntis: np.ndarray
+) -> list[dict]:
+    """
+    Returns list of attack segments where (label, rnti) is constant and label > 0.
+    Each segment: {label, rnti, start_ts, start_idx, end_idx (inclusive)}.
+    """
+    segments = []
+    N = len(labels)
+    i = 0
+    while i < N:
+        if labels[i] == 0:
+            i += 1
+            continue
+        j = i + 1
+        while j < N and labels[j] == labels[i] and rntis[j] == rntis[i]:
+            j += 1
+        segments.append({
+            "label":     int(labels[i]),
+            "rnti":      int(rntis[i]),
+            "start_ts":  float(timestamps_ms[i]),
+            "start_idx": i,
+            "end_idx":   j - 1,
+        })
+        i = j
+    return segments
+
+
+def compute_detection_latency(
+    preds_binary: np.ndarray,
+    labels: np.ndarray,
+    timestamps_ms: np.ndarray,
+    rntis: np.ndarray,
+) -> dict[str, dict]:
+    """
+    Per-class detection latency. Segments with no alert are excluded (FN).
+    Returns {class_name: {mean_s, median_s, n_segments}}.
+    """
+    segments = find_attack_segments(labels, timestamps_ms, rntis)
+    lats: dict[str, list[float]] = defaultdict(list)
+
+    for seg in segments:
+        name = LABEL_NAMES.get(seg["label"])
+        if name is None:
+            continue
+        s, e = seg["start_idx"], seg["end_idx"]
+        alert_idxs = np.where(preds_binary[s:e + 1])[0]
+        if len(alert_idxs) == 0:
+            continue
+        first_alert_ts = timestamps_ms[s + alert_idxs[0]]
+        lats[name].append((first_alert_ts - seg["start_ts"]) / 1000.0)
+
+    result: dict[str, dict] = {}
+    for name in LABEL_NAMES.values():
+        vals = lats[name]
+        if vals:
+            result[name] = {
+                "mean_s":     round(float(np.mean(vals)), 3),
+                "median_s":   round(float(np.median(vals)), 3),
+                "n_segments": len(vals),
+            }
+        else:
+            result[name] = {"mean_s": None, "median_s": None, "n_segments": 0}
+    return result
+
+
+def compute_inference_latency(latency_ms: list[float]) -> dict:
+    """Summarise per-window inference times (ms). Returns mean/median/p95."""
+    if not latency_ms:
+        return {"mean_ms": None, "median_ms": None, "p95_ms": None}
+    a = np.array(latency_ms)
+    return {
+        "mean_ms":   round(float(np.mean(a)), 4),
+        "median_ms": round(float(np.median(a)), 4),
+        "p95_ms":    round(float(np.percentile(a, 95)), 4),
+    }
+
+
+def compute_roc_auc(
+    mse_val: np.ndarray, mse_attack_pos: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """
+    mse_val: MSE of validation (pure-benign) windows → y_true=0
+    mse_attack_pos: MSE of attack-dataset windows with label>0 → y_true=1
+    Returns (fpr_arr, tpr_arr, auc_val).
+    """
+    y_true  = np.concatenate([np.zeros(len(mse_val)), np.ones(len(mse_attack_pos))])
+    y_score = np.concatenate([mse_val, mse_attack_pos])
+    fpr, tpr, _ = roc_curve(y_true, y_score)
+    auc_val = float(sklearn_auc(fpr, tpr))
+    return fpr, tpr, round(auc_val, 4)
