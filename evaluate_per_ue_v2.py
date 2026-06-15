@@ -72,18 +72,17 @@ def load_csv(path: str) -> list[dict]:
     return rows
 
 
-def preprocess_rows(rows: list[dict]) -> list[dict]:
+def preprocess_rows(rows: list[dict]) -> None:
     """Clip PRB features to [0, 1] in-place."""
     for r in rows:
         for col in ("prb_usage_ul_ratio", "prb_usage_dl_ratio", "prb_total"):
             if col in r:
                 r[col] = min(1.0, max(0.0, r[col]))
-    return rows
 
 
 def split_by_rnti(rows: list[dict]) -> dict[int, list[dict]]:
     """Group rows by RNTI, preserving chronological order within each group."""
-    d: dict[int, list] = defaultdict(list)
+    d: dict[int, list[dict]] = defaultdict(list)
     for r in rows:
         d[int(r["rnti"])].append(r)
     return dict(d)
