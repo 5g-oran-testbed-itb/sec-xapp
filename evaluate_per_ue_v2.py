@@ -122,3 +122,40 @@ def count_mixed_windows(labels: np.ndarray, seq_len: int = SEQ_LEN) -> int:
         if 0 < attack_ratio < 1:
             mixed += 1
     return mixed
+
+
+# ── Section 2: Rule engine ────────────────────────────────────────────────────
+
+_RULE_DEFS = [
+    # (condition_fn, consec_needed)
+    (lambda f: (f[3] > 15000.0) or  (f[1] > 0.70),  5),   # R1 UL Flood
+    (lambda f: (f[2] > 15000.0) or  (f[0] > 0.85),  5),   # R2 DL Flood
+    (lambda f: (f[9] > 0.12)    and (f[8] > 0.05),  5),   # R3 Burst
+    (lambda f: (f[10] >= 0.90)  and (f[8] > 0.50),  10),  # R4 RoQ
+    (lambda f: (f[1] > 0.30)    and (f[7] < 5000.0), 3),  # R5 Efficiency
+]
+
+
+def run_rule_engine(X: np.ndarray) -> np.ndarray:
+    """
+    Stateful R1–R5 evaluation. Counters run continuously (not reset per window).
+    Input:  X (N, 15) float32 — raw (unscaled) per-UE features
+    Output: rule_fires (N,) bool — True if any rule fires at timestep t
+    """
+    N = X.shape[0]
+    counters = [0] * len(_RULE_DEFS)
+    rule_fires = np.zeros(N, dtype=bool)
+
+    for t in range(N):
+        f = X[t]
+        mask = 0
+        for i, (cond, needed) in enumerate(_RULE_DEFS):
+            if cond(f):
+                counters[i] += 1
+            else:
+                counters[i] = 0
+            if counters[i] >= needed:
+                mask |= (1 << i)
+        rule_fires[t] = (mask > 0)
+
+    return rule_fires
