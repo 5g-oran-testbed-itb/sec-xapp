@@ -362,3 +362,66 @@ def compute_roc_auc(
     fpr, tpr, _ = roc_curve(y_true, y_score)
     auc_val = float(sklearn_auc(fpr, tpr))
     return fpr, tpr, round(auc_val, 4)
+
+
+# ── Section 5: JSON output + stdout summary ───────────────────────────────────
+
+def build_result_entry(
+    cm: dict,
+    fpr_val: float,
+    det_latency: dict,
+    per_class_recall: dict,
+    inf_latency: dict | None = None,
+    auc_val: float | None = None,
+) -> dict:
+    """Build the JSON sub-dict for one detection configuration."""
+    entry: dict = {
+        "recall":    cm["recall"],
+        "precision": cm["precision"],
+        "f1":        cm["f1"],
+        "fpr_val":   fpr_val,
+        "confusion_matrix": {
+            "tn": cm["tn"], "fp": cm["fp"],
+            "fn": cm["fn"], "tp": cm["tp"],
+        },
+        "detection_latency": det_latency,
+        "per_class_recall":  per_class_recall,
+    }
+    if inf_latency is not None:
+        entry["inference_latency"] = inf_latency
+    if auc_val is not None:
+        entry["auc"] = auc_val
+    return entry
+
+
+def save_results_json(metadata: dict, results: dict, output_dir: str) -> str:
+    os.makedirs(output_dir, exist_ok=True)
+    ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = os.path.join(output_dir, f"eval_per_ue_v2_{ts}.json")
+    with open(path, "w") as f:
+        json.dump({"metadata": metadata, "results": results}, f, indent=2)
+    print(f"\n[JSON] Saved → {path}")
+    return path
+
+
+def print_summary_table(results: dict) -> None:
+    configs = ["rule_only", "lstm_only", "gru_only", "lstm_hybrid", "gru_hybrid"]
+    header = (f"{'Config':<16} {'Recall':>7} {'F1':>7} "
+              f"{'FPR_val':>8} {'Det.Lat(s)':>12} {'Inf.Lat(ms)':>12}")
+    print("\n" + header)
+    print("─" * len(header))
+    for cfg in configs:
+        r = results.get(cfg)
+        if r is None:
+            continue
+        recall  = f"{r['recall']*100:.1f}%"
+        f1      = f"{r['f1']*100:.1f}%"
+        fpr     = f"{r['fpr_val']*100:.2f}%"
+        det_vals = [
+            v["mean_s"] for v in r.get("detection_latency", {}).values()
+            if isinstance(v, dict) and v.get("mean_s") is not None
+        ]
+        det_str = f"{float(np.mean(det_vals)):.1f}" if det_vals else "—"
+        inf_ms  = r.get("inference_latency", {}).get("mean_ms")
+        inf_str = f"{inf_ms:.2f}" if inf_ms is not None else "—"
+        print(f"{cfg:<16} {recall:>7} {f1:>7} {fpr:>8} {det_str:>12} {inf_str:>12}")

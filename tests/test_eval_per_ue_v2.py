@@ -265,3 +265,59 @@ def test_compute_roc_auc_perfect():
     mse_attack = np.array([100.0, 200.0, 150.0], dtype=np.float32)
     fpr, tpr, auc_val = compute_roc_auc(mse_val, mse_attack)
     assert auc_val == pytest.approx(1.0)
+
+
+import tempfile
+import json
+from evaluate_per_ue_v2 import build_result_entry, save_results_json
+
+def _dummy_cm():
+    return {"tp": 10, "fp": 2, "tn": 50, "fn": 3,
+            "recall": 0.77, "precision": 0.83, "f1": 0.80}
+
+def _dummy_det_lat():
+    return {name: {"mean_s": 5.0, "median_s": 4.5, "n_segments": 2}
+            for name in ["ul_flood", "dl_flood", "burst", "roq"]}
+
+def _dummy_pcr():
+    return {"ul_flood": 0.9, "dl_flood": 0.85, "burst": 0.7, "roq": 0.65}
+
+
+def test_build_result_entry_rule_only_keys():
+    entry = build_result_entry(
+        cm=_dummy_cm(), fpr_val=0.02,
+        det_latency=_dummy_det_lat(), per_class_recall=_dummy_pcr(),
+    )
+    assert "recall" in entry
+    assert "f1" in entry
+    assert "fpr_val" in entry
+    assert "confusion_matrix" in entry
+    assert "detection_latency" in entry
+    assert "per_class_recall" in entry
+    assert "inference_latency" not in entry   # rule-only has no inference lat
+    assert "auc" not in entry
+
+
+def test_build_result_entry_lstm_has_auc_and_inf_lat():
+    inf_lat = {"mean_ms": 1.2, "median_ms": 1.1, "p95_ms": 2.0}
+    entry = build_result_entry(
+        cm=_dummy_cm(), fpr_val=0.02,
+        det_latency=_dummy_det_lat(), per_class_recall=_dummy_pcr(),
+        inf_latency=inf_lat, auc_val=0.97,
+    )
+    assert "inference_latency" in entry
+    assert "auc" in entry
+
+
+def test_save_results_json_creates_file():
+    metadata = {"val_csv": "v.csv", "attack_csv": "a.csv", "seq_len": 10,
+                "thresholds": {"lstm": 1.0, "gru": 1.0, "source": "test"},
+                "window_counts": {}}
+    results = {"rule_only": build_result_entry(
+        _dummy_cm(), 0.02, _dummy_det_lat(), _dummy_pcr())}
+    with tempfile.TemporaryDirectory() as tmp:
+        path = save_results_json(metadata, results, tmp)
+        assert os.path.exists(path)
+        data = json.load(open(path))
+        assert "metadata" in data and "results" in data
+        assert "rule_only" in data["results"]
