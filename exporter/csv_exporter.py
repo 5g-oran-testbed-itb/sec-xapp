@@ -481,19 +481,93 @@ def gru_inference_loop():
             log.debug("GRU inference error (skipping): %s", e)
 
 
+def ue_alert_tail_loop():
+    """Tail newest ue_alerts_*.csv and update per-RNTI alert gauges."""
+    current_file = None
+    file_handle  = None
+    reader       = None
+
+    while True:
+        newest = find_newest_csv(CSV_DIR, "ue_alerts_*.csv")
+
+        if newest != current_file:
+            if file_handle:
+                file_handle.close()
+                file_handle = None
+                reader = None
+            if newest:
+                log.info("Tailing new UE alert CSV: %s", newest)
+                file_handle = open(newest, newline="")
+                reader = csv.DictReader(file_handle)
+                for _ in reader:
+                    pass  # skip existing rows on first open
+            current_file = newest
+
+        if reader:
+            for raw in reader:
+                row = parse_ue_alert_row(raw)
+                rnti = row["rnti"]
+                g_ue_mse.labels(rnti=rnti).set(row["mse"])
+                g_ue_alert_type.labels(rnti=rnti).set(row["alert_type"])
+                g_ue_stage.labels(rnti=rnti).set(row["rule_stage"])
+
+        time.sleep(POLL_INTERVAL)
+
+
+def ue_feature_tail_loop():
+    """Tail newest per_ue_training_*.csv and update per-RNTI feature gauges."""
+    current_file = None
+    file_handle  = None
+    reader       = None
+
+    while True:
+        newest = find_newest_csv(CSV_DIR, "per_ue_training_*.csv")
+
+        if newest != current_file:
+            if file_handle:
+                file_handle.close()
+                file_handle = None
+                reader = None
+            if newest:
+                log.info("Tailing new UE feature CSV: %s", newest)
+                file_handle = open(newest, newline="")
+                reader = csv.DictReader(file_handle)
+                for _ in reader:
+                    pass  # skip existing rows on first open
+            current_file = newest
+
+        if reader:
+            for raw in reader:
+                row = parse_ue_feature_row(raw)
+                rnti = row["rnti"]
+                g_ue_prb_ul.labels(rnti=rnti).set(row["prb_usage_ul_ratio"])
+                g_ue_prb_dl.labels(rnti=rnti).set(row["prb_usage_dl_ratio"])
+                g_ue_thp_ul_kbps.labels(rnti=rnti).set(row["thp_ul_kbps"])
+                g_ue_thp_dl_kbps.labels(rnti=rnti).set(row["thp_dl_kbps"])
+                g_ue_prb_direction.labels(rnti=rnti).set(row["prb_direction"])
+                g_ue_ul_efficiency.labels(rnti=rnti).set(row["ul_efficiency"])
+
+        time.sleep(0.5)
+
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
     log.info("Starting xapp Prometheus exporter on :8000")
     start_http_server(8000)
     _populate_eval_v2()
+    _populate_eval_ue_v4()
 
-    t1 = threading.Thread(target=csv_tail_loop,      daemon=True, name="csv-tail")
-    t2 = threading.Thread(target=eval_watch_loop,    daemon=True, name="eval-watch")
-    t3 = threading.Thread(target=gru_inference_loop, daemon=True, name="gru-infer")
+    t1 = threading.Thread(target=csv_tail_loop,        daemon=True, name="csv-tail")
+    t2 = threading.Thread(target=eval_watch_loop,      daemon=True, name="eval-watch")
+    t3 = threading.Thread(target=gru_inference_loop,   daemon=True, name="gru-infer")
+    t4 = threading.Thread(target=ue_alert_tail_loop,   daemon=True, name="ue-alert-tail")
+    t5 = threading.Thread(target=ue_feature_tail_loop, daemon=True, name="ue-feature-tail")
     t1.start()
     t2.start()
     t3.start()
+    t4.start()
+    t5.start()
 
     log.info("Exporter running. Metrics at http://0.0.0.0:8000/metrics")
     while True:
