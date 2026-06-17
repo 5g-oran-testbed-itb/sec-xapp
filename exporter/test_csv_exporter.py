@@ -321,3 +321,27 @@ def test_parse_ue_alert_row_unknown_alert_type_defaults_zero():
     raw = {"rnti": "0x0002", "rule_stage": "0", "mse": "0.0", "alert_type": "unknown_type"}
     result = parse_ue_alert_row(raw)
     assert result["alert_type"] == 0
+
+
+def test_parse_ue_feature_row_extracts_fields():
+    from csv_exporter import parse_ue_feature_row
+    raw = {
+        "timestamp_ms": "1750000000000", "datetime": "2026-06-17 14:00:00",
+        "rnti": "0x2345",
+        "prb_usage_ul_ratio": "0.75", "prb_usage_dl_ratio": "0.30",
+        "thp_ul_kbps": "5000.0", "thp_dl_kbps": "1200.0",
+        "prb_direction": "0.43", "ul_efficiency": "6666.7", "label": "1",
+    }
+    result = parse_ue_feature_row(raw)
+    assert result["rnti"] == "0x2345"
+    assert abs(result["prb_usage_ul_ratio"] - 0.75) < 1e-6
+    assert abs(result["thp_ul_kbps"] - 5000.0) < 1e-6
+    assert abs(result["prb_direction"] - 0.43) < 1e-6
+
+
+def test_parse_ue_feature_row_missing_col_defaults_zero():
+    from csv_exporter import parse_ue_feature_row
+    result = parse_ue_feature_row({"rnti": "0x0001"})
+    assert result["thp_ul_kbps"] == 0.0
+    assert result["prb_usage_dl_ratio"] == 0.0
+    assert result["ul_efficiency"] == 0.0

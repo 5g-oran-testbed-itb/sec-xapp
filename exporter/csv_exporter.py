@@ -130,6 +130,25 @@ def parse_ue_alert_row(raw: dict) -> dict:
         "alert_type": UE_ALERT_TYPE_MAP.get(raw.get("alert_type", "none"), 0),
     }
 
+
+UE_FEATURE_FLOAT_COLS = [
+    "prb_usage_dl_ratio", "prb_usage_ul_ratio",
+    "thp_dl_kbps", "thp_ul_kbps",
+    "prb_direction", "ul_efficiency",
+]
+
+
+def parse_ue_feature_row(raw: dict) -> dict:
+    """Parse one row from per_ue_training_*.csv. Returns typed dict."""
+    out = {"rnti": raw.get("rnti", "0x0000")}
+    for col in UE_FEATURE_FLOAT_COLS:
+        v = raw.get(col, "")
+        try:
+            out[col] = float(v)
+        except (ValueError, TypeError):
+            out[col] = 0.0
+    return out
+
 # ── GRU inference config ─────────────────────────────────────────────────────
 GRU_MODEL_A  = os.getenv("GRU_MODEL_A", "/data/models/gru_autoencoder_A_v1.pt")
 GRU_MODEL_B  = os.getenv("GRU_MODEL_B", "/data/models/gru_autoencoder_B_v1.pt")
