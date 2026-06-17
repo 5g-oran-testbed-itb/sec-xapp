@@ -1,0 +1,143 @@
+{
+  "uid": "xapp-ue-live",
+  "title": "xApp Security Monitor — Per-UE Live",
+  "tags": ["xapp", "security", "per-ue", "live"],
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": { "from": "now-10m", "to": "now" },
+  "schemaVersion": 38,
+  "templating": {
+    "list": [
+      {
+        "name": "rnti",
+        "label": "RNTI",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": { "query": "label_values(xapp_ue_thp_ul_kbps, rnti)", "refId": "StandardVariableQuery" },
+        "multi": true,
+        "includeAll": true,
+        "current": {},
+        "refresh": 2,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Active RNTIs",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "value": null, "color": "green" },
+            { "value": 1,    "color": "blue" }
+          ]}
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "count(xapp_ue_thp_ul_kbps > 0) or vector(0)", "instant": true, "legendFormat": "" }]
+    },
+    {
+      "id": 2, "type": "stat", "title": "Alerted RNTIs",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "value": null, "color": "green" },
+            { "value": 1,    "color": "red" }
+          ]}
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "count(xapp_ue_alert_type > 0) or vector(0)", "instant": true, "legendFormat": "" }]
+    },
+    {
+      "id": 3, "type": "stat", "title": "Selected UE Alert Status",
+      "gridPos": { "x": 8, "y": 0, "w": 8, "h": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "NORMAL",   "color": "green"  } } },
+            { "type": "value", "options": { "1": { "text": "UL FLOOD", "color": "orange" } } },
+            { "type": "value", "options": { "2": { "text": "DL FLOOD", "color": "orange" } } },
+            { "type": "value", "options": { "3": { "text": "BURST",    "color": "yellow" } } },
+            { "type": "value", "options": { "4": { "text": "RoQ",      "color": "red"    } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [
+            { "value": null, "color": "green" },
+            { "value": 1,    "color": "red"   }
+          ]}
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "vertical" },
+      "targets": [{ "expr": "xapp_ue_alert_type{rnti=~\"$rnti\"}", "instant": true, "legendFormat": "{{rnti}}" }]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Detection Stage per UE",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": { "min": 0, "max": 2,
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "Normal"   } } },
+            { "type": "value", "options": { "1": { "text": "Warning"  } } },
+            { "type": "value", "options": { "2": { "text": "Critical" } } }
+          ]
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [{ "expr": "xapp_ue_stage", "legendFormat": "Stage {{rnti}}" }]
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "MSE Score per UE (on alert events)",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": { "min": 0 },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Threshold GRU-UE v4" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "fill": "dash" } },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          }
+        ]
+      },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "xapp_ue_mse", "legendFormat": "MSE {{rnti}}" },
+        { "expr": "0.025969 + 0 * xapp_ue_mse", "legendFormat": "Threshold GRU-UE v4" }
+      ]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Throughput UL / DL per UE",
+      "gridPos": { "x": 0, "y": 10, "w": 12, "h": 6 },
+      "fieldConfig": { "defaults": { "unit": "kbps", "min": 0 } },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "xapp_ue_thp_ul_kbps", "legendFormat": "UL {{rnti}}" },
+        { "expr": "xapp_ue_thp_dl_kbps", "legendFormat": "DL {{rnti}}" }
+      ]
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "PRB Utilization per UE",
+      "gridPos": { "x": 12, "y": 10, "w": 12, "h": 6 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "xapp_ue_prb_ul", "legendFormat": "PRB UL {{rnti}}" },
+        { "expr": "xapp_ue_prb_dl", "legendFormat": "PRB DL {{rnti}}" }
+      ]
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "PRB Direction & UL Efficiency per UE",
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 6 },
+      "fieldConfig": { "defaults": { "min": -1 } },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "xapp_ue_prb_direction",  "legendFormat": "PRB Dir {{rnti}}" },
+        { "expr": "xapp_ue_ul_efficiency",  "legendFormat": "UL Eff {{rnti}}" }
+      ]
+    }
+  ]
+}
