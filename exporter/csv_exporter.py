@@ -162,9 +162,9 @@ def _track_stage_latency(stage: int, prev_stage: int) -> None:
 
 # ── Public helpers (unit-testable) ───────────────────────────────────────────
 
-def find_newest_csv(csv_dir: str):
-    """Return path to the most recently modified .csv in csv_dir, or None."""
-    files = glob.glob(os.path.join(csv_dir, "*.csv"))
+def find_newest_csv(csv_dir: str, pattern: str = "*.csv"):
+    """Return path to the most recently modified file matching pattern in csv_dir, or None."""
+    files = glob.glob(os.path.join(csv_dir, pattern))
     if not files:
         return None
     try:

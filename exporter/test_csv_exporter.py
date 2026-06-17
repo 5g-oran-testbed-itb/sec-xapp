@@ -243,3 +243,23 @@ def test_populate_eval_v2_sets_hybrid_gru_fpr():
     csv_exporter._populate_eval_v2()
     val = csv_exporter.g_eval_fpr_v2.labels(model="hybrid_gru")._value.get()
     assert abs(val - 0.0287) < 0.0001
+
+
+def test_find_newest_csv_filters_by_pattern(tmp_path):
+    """find_newest_csv with pattern 'ue_alerts_*.csv' ignores other CSV files."""
+    from csv_exporter import find_newest_csv
+    (tmp_path / "training_20260617.csv").write_text("cell-level")
+    time.sleep(0.05)
+    alert = tmp_path / "ue_alerts_20260617.csv"
+    alert.write_text("per-ue")
+    assert find_newest_csv(str(tmp_path), "ue_alerts_*.csv") == str(alert)
+
+
+def test_find_newest_csv_default_pattern_unchanged(tmp_path):
+    """Default pattern '*.csv' still returns newest csv (backward-compatible)."""
+    from csv_exporter import find_newest_csv
+    (tmp_path / "a.csv").write_text("a")
+    time.sleep(0.05)
+    b = tmp_path / "b.csv"
+    b.write_text("b")
+    assert find_newest_csv(str(tmp_path)) == str(b)
