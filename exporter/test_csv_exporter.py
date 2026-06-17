@@ -263,3 +263,33 @@ def test_find_newest_csv_default_pattern_unchanged(tmp_path):
     b = tmp_path / "b.csv"
     b.write_text("b")
     assert find_newest_csv(str(tmp_path)) == str(b)
+
+
+# ── Per-UE v4 eval tests ─────────────────────────────────────────────────────
+
+def test_populate_eval_ue_v4_sets_gru_hybrid_overall_recall():
+    import csv_exporter
+    csv_exporter._populate_eval_ue_v4()
+    val = csv_exporter.g_ue_eval_recall_v4.labels(config="gru_hybrid", attack="all")._value.get()
+    assert abs(val - 0.961) < 0.001
+
+
+def test_populate_eval_ue_v4_sets_gru_hybrid_roq_recall():
+    import csv_exporter
+    csv_exporter._populate_eval_ue_v4()
+    val = csv_exporter.g_ue_eval_recall_v4.labels(config="gru_hybrid", attack="roq")._value.get()
+    assert abs(val - 0.922) < 0.001
+
+
+def test_populate_eval_ue_v4_sets_gru_hybrid_det_latency():
+    import csv_exporter
+    csv_exporter._populate_eval_ue_v4()
+    val = csv_exporter.g_ue_eval_det_lat_v4.labels(config="gru_hybrid")._value.get()
+    assert abs(val - 4.04) < 0.01
+
+
+def test_populate_eval_ue_v4_sets_rule_only_fpr():
+    import csv_exporter
+    csv_exporter._populate_eval_ue_v4()
+    val = csv_exporter.g_ue_eval_fpr_v4.labels(config="rule_only")._value.get()
+    assert abs(val - 0.0293) < 0.0001

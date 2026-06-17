@@ -61,6 +61,35 @@ g_eval_fpr_v2       = Gauge("xapp_eval_fpr_v2",       "Eval FPR v2",       ["mod
 g_eval_f1_v2        = Gauge("xapp_eval_f1_v2",        "Eval F1 v2",        ["model", "attack"])
 g_eval_precision_v2 = Gauge("xapp_eval_precision_v2", "Eval precision v2", ["model"])
 
+# ── Per-UE IDS v4 live metrics (per-RNTI label) ──────────────────────────────
+g_ue_mse        = Gauge("xapp_ue_mse",        "Per-UE MSE reconstruction error (on alert)", ["rnti"])
+g_ue_alert_type = Gauge("xapp_ue_alert_type", "Per-UE alert type: 0=none 1=ul_flood 2=dl_flood 3=burst 4=roq", ["rnti"])
+g_ue_stage      = Gauge("xapp_ue_stage",      "Per-UE IDS stage: 0/1/2", ["rnti"])
+
+g_ue_thp_ul_kbps    = Gauge("xapp_ue_thp_ul_kbps",    "Per-UE UL throughput (kbps)",  ["rnti"])
+g_ue_thp_dl_kbps    = Gauge("xapp_ue_thp_dl_kbps",    "Per-UE DL throughput (kbps)",  ["rnti"])
+g_ue_prb_ul         = Gauge("xapp_ue_prb_ul",         "Per-UE PRB UL utilization (0-1)", ["rnti"])
+g_ue_prb_dl         = Gauge("xapp_ue_prb_dl",         "Per-UE PRB DL utilization (0-1)", ["rnti"])
+g_ue_prb_direction  = Gauge("xapp_ue_prb_direction",  "Per-UE PRB direction [-1,+1]", ["rnti"])
+g_ue_ul_efficiency  = Gauge("xapp_ue_ul_efficiency",  "Per-UE UL efficiency (thp_ul/prb_ul)", ["rnti"])
+
+# ── Per-UE v4 eval metrics (config label, optional attack label) ──────────────
+g_ue_eval_recall_v4  = Gauge("xapp_ue_eval_recall_v4",  "Per-UE v4 eval recall",  ["config", "attack"])
+g_ue_eval_f1_v4      = Gauge("xapp_ue_eval_f1_v4",      "Per-UE v4 eval F1",      ["config", "attack"])
+g_ue_eval_fpr_v4     = Gauge("xapp_ue_eval_fpr_v4",     "Per-UE v4 eval FPR",     ["config"])
+g_ue_eval_det_lat_v4 = Gauge("xapp_ue_eval_det_lat_v4", "Per-UE v4 detection latency (s)", ["config"])
+g_ue_eval_mit_lat_v4 = Gauge("xapp_ue_eval_mit_lat_v4", "Per-UE v4 mitigation latency (s)", ["config"])
+
+# ── Static per-UE v4 eval results (from STATUS_DAN_RENCANA_EVALUASI.md §1.6c) ─
+KNOWN_EVAL_UE = {
+    "rule_only":   {"recall": 0.858, "f1": 0.913, "fpr": 0.0293, "det_lat": 4.67,  "mit_lat": 4.79},
+    "lstm_only":   {"recall": 0.910, "f1": 0.928, "fpr": 0.0305, "det_lat": 12.21, "mit_lat": 12.33},
+    "gru_only":    {"recall": 0.896, "f1": 0.921, "fpr": 0.0305, "det_lat": 10.46, "mit_lat": 10.58},
+    "lstm_hybrid": {"recall": 0.950, "f1": 0.948, "fpr": 0.0497, "det_lat": 4.67,  "mit_lat": 4.79},
+    "gru_hybrid":  {"recall": 0.961, "f1": 0.954, "fpr": 0.0514, "det_lat": 4.04,  "mit_lat": 4.16,
+                    "ul_flood": 0.979, "dl_flood": 0.968, "burst": 0.988, "roq": 0.922},
+}
+
 # ── Shared state: latest CSV row for GRU thread ──────────────────────────────
 _latest_row: dict = {}
 _latest_row_lock = threading.Lock()
@@ -336,6 +365,21 @@ def _populate_eval_v2():
                 g_eval_recall_v2.labels(model=model, attack=atk).set(data[atk]["recall"])
                 g_eval_f1_v2.labels(model=model, attack=atk).set(data[atk]["f1"])
     log.info("Eval v2 metrics populated for %d models", len(KNOWN_EVAL))
+
+
+def _populate_eval_ue_v4():
+    """Push KNOWN_EVAL_UE into Prometheus gauges at startup."""
+    per_attack = ["ul_flood", "dl_flood", "burst", "roq"]
+    for config, data in KNOWN_EVAL_UE.items():
+        g_ue_eval_recall_v4.labels(config=config, attack="all").set(data["recall"])
+        g_ue_eval_f1_v4.labels(config=config, attack="all").set(data["f1"])
+        g_ue_eval_fpr_v4.labels(config=config).set(data["fpr"])
+        g_ue_eval_det_lat_v4.labels(config=config).set(data["det_lat"])
+        g_ue_eval_mit_lat_v4.labels(config=config).set(data["mit_lat"])
+        for atk in per_attack:
+            if atk in data:
+                g_ue_eval_recall_v4.labels(config=config, attack=atk).set(data[atk])
+    log.info("UE eval v4 metrics populated for %d configs", len(KNOWN_EVAL_UE))
 
 
 def gru_inference_loop():
