@@ -293,3 +293,31 @@ def test_populate_eval_ue_v4_sets_rule_only_fpr():
     csv_exporter._populate_eval_ue_v4()
     val = csv_exporter.g_ue_eval_fpr_v4.labels(config="rule_only")._value.get()
     assert abs(val - 0.0293) < 0.0001
+
+
+# ── parse_ue_alert_row tests ────────────────────────────────────────────────
+
+def test_parse_ue_alert_row_extracts_fields():
+    from csv_exporter import parse_ue_alert_row
+    raw = {"timestamp_ms": "1750000000000", "rnti": "0x1a2b",
+           "rule_mask": "0x01", "rule_stage": "2",
+           "mse": "0.031500", "threshold": "0.025969", "alert_type": "ul_flood"}
+    result = parse_ue_alert_row(raw)
+    assert result["rnti"] == "0x1a2b"
+    assert result["rule_stage"] == 2
+    assert abs(result["mse"] - 0.0315) < 1e-6
+    assert result["alert_type"] == 1  # ul_flood → 1
+
+
+def test_parse_ue_alert_row_roq_maps_to_4():
+    from csv_exporter import parse_ue_alert_row
+    raw = {"rnti": "0x0001", "rule_stage": "1", "mse": "0.028", "alert_type": "roq", "threshold": "0.025969"}
+    result = parse_ue_alert_row(raw)
+    assert result["alert_type"] == 4
+
+
+def test_parse_ue_alert_row_unknown_alert_type_defaults_zero():
+    from csv_exporter import parse_ue_alert_row
+    raw = {"rnti": "0x0002", "rule_stage": "0", "mse": "0.0", "alert_type": "unknown_type"}
+    result = parse_ue_alert_row(raw)
+    assert result["alert_type"] == 0

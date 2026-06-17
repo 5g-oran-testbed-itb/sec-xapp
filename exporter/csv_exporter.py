@@ -110,6 +110,25 @@ FLOAT_COLS  = LSTM_FEATURES + EXTRA_COLS
 STR_COLS    = {"alert_type"}
 ALERT_TYPE_MAP = {"none": 0, "ul_flood": 1, "dl_flood": 2,
                   "burst": 3, "rrc_storm": 4}
+UE_ALERT_TYPE_MAP = {"none": 0, "ul_flood": 1, "dl_flood": 2, "burst": 3, "roq": 4}
+
+
+def parse_ue_alert_row(raw: dict) -> dict:
+    """Parse one row from ue_alerts_*.csv. Returns typed dict."""
+    try:
+        stage = int(float(raw.get("rule_stage", 0)))
+    except (ValueError, TypeError):
+        stage = 0
+    try:
+        mse = float(raw.get("mse", 0.0))
+    except (ValueError, TypeError):
+        mse = 0.0
+    return {
+        "rnti":       raw.get("rnti", "0x0000"),
+        "rule_stage": stage,
+        "mse":        mse,
+        "alert_type": UE_ALERT_TYPE_MAP.get(raw.get("alert_type", "none"), 0),
+    }
 
 # ── GRU inference config ─────────────────────────────────────────────────────
 GRU_MODEL_A  = os.getenv("GRU_MODEL_A", "/data/models/gru_autoencoder_A_v1.pt")
