@@ -92,8 +92,8 @@ class RuleBasedUEIDS:
 class GRUUEDetector:
     """Online GRU UE detector. Maintains rolling seq window + burst feature buffers."""
 
-    def __init__(self, model_path):
-        self.sess   = ort.InferenceSession(model_path)
+    def __init__(self, sess):
+        self.sess   = sess
         self.window = np.zeros((UE_WINDOW_SIZE, 19), dtype=np.float32)
         self.filled = 0
         # Rolling buffers for burst index computation (last 10 values)
@@ -172,6 +172,10 @@ class LSTMUEDetector(GRUUEDetector):
         sev = 1 if score > LSTM_UE_THRESH else 0
         return sev, score
 
+
+# Pre-load ONNX sessions once at startup — reused across all run_eval calls
+_GRU_SESS  = ort.InferenceSession(UE_ONNX_MODEL)
+_LSTM_SESS = ort.InferenceSession(LSTM_UE_ONNX_MODEL)
 
 # ── CSV source helpers ────────────────────────────────────────────────────────
 
@@ -265,58 +269,71 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
     # Collect available labels for info display
     available_labels = sorted({int(r["label"]) for r in all_rows})
 
-    ids     = RuleBasedUEIDS()
-    lstm_ue = LSTMUEDetector(LSTM_UE_ONNX_MODEL)
-    gru_ue  = GRUUEDetector(UE_ONNX_MODEL)
+    # ── Feature extraction (vectorized) ─────────────────────────────────────────
+    feat_base = np.array([[float(r.get(c, 0.0)) for c in _UE_CSV_FEATURES]
+                          for r in rows], dtype=np.float32)  # (N, 15)
 
-    labels     = []
-    rule_sev   = []
-    lstm_sev   = []
-    final_sev  = []
-    lstm_scores= []
-    timestamps = []
-    prb_dl_arr = []
-    prb_ul_arr = []
+    def _rmean(arr, w=_UE_BURST_WIN):
+        out = np.empty(len(arr), dtype=np.float64)
+        for i in range(len(arr)):
+            out[i] = arr[max(0, i - w + 1):i + 1].mean()
+        return out
 
-    for row in rows:
-        lbl    = int(row["label"])
-        now_ms = int(row["timestamp_ms"])
-        rsev            = ids.detect(row)
-        lstmsev, lstmsc = lstm_ue.update(row)
-        grusev,  grusc  = gru_ue.update(row)
-        if det_mode == "rule":
-            lsev, lsc = 0, 0.0
-        elif det_mode == "lstm":
-            lsev, lsc = lstmsev, lstmsc
-        elif det_mode == "gru":
-            lsev, lsc = grusev, grusc
-        elif det_mode == "lstm_hybrid":
-            lsev, lsc = lstmsev, lstmsc
-        else:  # gru_hybrid / hybrid
-            lsev, lsc = grusev, grusc
+    prb_ul_m = _rmean(feat_base[:, 1])
+    prb_dl_m = _rmean(feat_base[:, 0])
+    thp_ul_m = _rmean(feat_base[:, 3])
+    thp_dl_m = _rmean(feat_base[:, 2])
 
-        if det_mode == "rule":
-            fsev = rsev
-        elif det_mode in ("lstm", "gru"):
-            fsev = lsev
-        else:  # hybrid, lstm_hybrid, gru_hybrid
-            fsev = max(rsev, lsev)
+    burst = np.stack([
+        np.clip(np.log1p(feat_base[:, 1]) / (prb_ul_m + _UE_EPS), 0, _UE_BURST_CLIP),
+        np.clip(np.log1p(feat_base[:, 0]) / (prb_dl_m + _UE_EPS), 0, _UE_BURST_CLIP),
+        np.clip(feat_base[:, 3] / (thp_ul_m + 1.0),               0, _UE_BURST_CLIP),
+        np.clip(feat_base[:, 2] / (thp_dl_m + 1.0),               0, _UE_BURST_CLIP),
+    ], axis=1).astype(np.float32)  # (N, 4)
 
-        labels.append(lbl)
-        rule_sev.append(rsev)
-        lstm_sev.append(lsev)
-        final_sev.append(fsev)
-        lstm_scores.append(lsc)
-        timestamps.append(now_ms)
-        prb_dl_arr.append(float(row.get("prb_usage_dl_ratio", 0)))
-        prb_ul_arr.append(float(row.get("prb_usage_ul_ratio", 0)))
+    feat_full = np.concatenate([feat_base, burst], axis=1)  # (N, 19)
 
-    labels     = np.array(labels)
-    rule_sev   = np.array(rule_sev)
-    lstm_sev   = np.array(lstm_sev)
-    final_sev  = np.array(final_sev)
-    lstm_scores= np.array(lstm_scores)
-    timestamps = np.array(timestamps)
+    # ── Rule-based (stateful, pure Python) ───────────────────────────────────────
+    ids = RuleBasedUEIDS()
+    rule_sev = np.array([ids.detect(row) for row in rows], dtype=int)
+
+    # ── Batch ML inference ────────────────────────────────────────────────────────
+    def _batch_infer(sess, X, thresh):
+        N = len(X)
+        if N < UE_WINDOW_SIZE:
+            return np.zeros(N, np.float32), np.zeros(N, int)
+        # stride_tricks: view without copying, then transpose to (N-29, 30, 19)
+        view = np.lib.stride_tricks.sliding_window_view(X, UE_WINDOW_SIZE, axis=0)
+        wins = np.ascontiguousarray(view.transpose(0, 2, 1)).astype(np.float32)
+        sc = sess.run(["mse"], {"input": wins})[0]
+        scores = np.zeros(N, np.float32)
+        scores[UE_WINDOW_SIZE - 1:] = sc
+        return scores, (scores > thresh).astype(int)
+
+    _zero_sev    = np.zeros(len(rows), int)
+    _zero_scores = np.zeros(len(rows), np.float32)
+
+    if det_mode == "rule":
+        gru_scores = gru_sev = lstm_scores = lstm_sev = _zero_scores
+        lstm_sev = _zero_sev
+        final_sev = rule_sev
+    elif det_mode in ("lstm", "lstm_hybrid"):
+        lstm_scores, lstm_sev = _batch_infer(_LSTM_SESS, feat_full, LSTM_UE_THRESH)
+        gru_scores = gru_sev = _zero_scores
+        final_sev = np.maximum(rule_sev, lstm_sev) if det_mode == "lstm_hybrid" else lstm_sev
+    elif det_mode in ("gru", "hybrid"):
+        gru_scores, gru_sev   = _batch_infer(_GRU_SESS,  feat_full, GRU_UE_THRESH)
+        lstm_scores, lstm_sev = gru_scores, gru_sev
+        final_sev = np.maximum(rule_sev, gru_sev) if det_mode == "hybrid" else gru_sev
+    else:  # gru_hybrid
+        gru_scores, gru_sev   = _batch_infer(_GRU_SESS,  feat_full, GRU_UE_THRESH)
+        lstm_scores, lstm_sev = gru_scores, gru_sev
+        final_sev = np.maximum(rule_sev, gru_sev)
+
+    labels     = np.array([int(r["label"])                       for r in rows])
+    timestamps = np.array([int(r["timestamp_ms"])                for r in rows])
+    prb_dl_arr = [float(r.get("prb_usage_dl_ratio", 0)) for r in rows]
+    prb_ul_arr = [float(r.get("prb_usage_ul_ratio", 0)) for r in rows]
 
     y_true = (labels != 0).astype(int)
 
