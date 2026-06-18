@@ -1,6 +1,6 @@
 """
-Attack Detection Evaluation Dashboard
-Evaluasi offline hybrid IDS (Rule-Based + LSTM) per skenario serangan.
+Per-UE Attack Detection Evaluation Dashboard
+Evaluasi offline hybrid IDS per-UE (Rule-Based + GRU/LSTM-UE v4).
 """
 import csv
 import glob
@@ -11,7 +11,6 @@ import onnxruntime as ort
 import dash
 from dash import dcc, html, Input, Output, State, ctx
 import plotly.graph_objs as go
-from plotly.subplots import make_subplots
 from datetime import datetime
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
@@ -19,29 +18,21 @@ from sklearn.metrics import (
 )
 
 # ── Config ────────────────────────────────────────────────────────────────────
-CSV_DIR    = os.getenv("CSV_DIR",   "/data/csv")
-ONNX_MODEL = os.getenv("ONNX_MODEL", "/data/security_model.onnx")
-WINDOW_SIZE = 10
-LSTM_THRESH = 0.5
-
-UE_WINDOW_SIZE    = 30
-GRU_UE_THRESH     = 0.025969
-LSTM_UE_THRESH    = 0.025266
-UE_ONNX_MODEL     = os.getenv("UE_ONNX_MODEL",      "/data/models/gru_ue_v4.onnx")
-LSTM_UE_ONNX_MODEL= os.getenv("LSTM_UE_ONNX_MODEL", "/data/models/lstm_ue_v4.onnx")
-UE_LABEL_NAMES    = {0: "Normal", 1: "UL Flood", 2: "DL Flood", 3: "Burst ON/OFF", 4: "RoQ"}
+CSV_DIR            = os.getenv("CSV_DIR",            "/data/csv")
+UE_WINDOW_SIZE     = 30
+GRU_UE_THRESH      = 0.025969
+LSTM_UE_THRESH     = 0.025266
+UE_ONNX_MODEL      = os.getenv("UE_ONNX_MODEL",      "/data/models/gru_ue_v4.onnx")
+LSTM_UE_ONNX_MODEL = os.getenv("LSTM_UE_ONNX_MODEL", "/data/models/lstm_ue_v4.onnx")
+LABEL_NAMES        = {0: "Normal", 1: "UL Flood", 2: "DL Flood", 3: "Burst ON/OFF", 4: "RoQ"}
 
 ATTACK_BUTTONS = [
     ("btn-ul",    "1",   "UL Flood",    "#FF6B35"),
     ("btn-dl",    "2",   "DL Flood",    "#FF4757"),
     ("btn-burst", "3",   "Burst ON/OFF","#FFA502"),
-    ("btn-rrc",   "4",   "RRC Storm",   "#FF6348"),
-    ("btn-rf",    "5",   "RF Jammer",   "#D2A8FF"),
+    ("btn-roq",   "4",   "RoQ",         "#FF6348"),
     ("btn-all",   "all", "All Attacks", "#8957E5"),
 ]
-
-LABEL_NAMES = {0: "Normal", 1: "UL Flood", 2: "DL Flood",
-               3: "Burst ON/OFF", 4: "RRC Storm", 5: "RF Jammer"}
 
 BG    = "#0D1117"
 CARD  = "#161B22"
@@ -58,153 +49,7 @@ STAGE_COLORS = {"Rule-Based": ACCENT, "LSTM": GOLD, "Hybrid": GREEN}
 
 # ── Detection pipeline (mirrors evaluate_detection.py) ───────────────────────
 
-class RuleBasedIDS:
-    EPS = 1e-6
-
-    def __init__(self):
-        self.ul_sat_cnt = self.dl_sat_cnt = self.rf_susp_cnt = 0
-        self.empty_storm_cnt = 0
-        self.ul_var_buf = [0.0]*10; self.ul_var_head = self.ul_var_count = 0
-        self.dl_var_buf = [0.0]*10; self.dl_var_head = self.dl_var_count = 0
-        self.s2_sat_start_ms = self.s2_sat_dur_ms = self.s2_rec_start_ms = 0
-        self.s2_rf_cnt = self.s2_rrc_cnt = 0
-        self.prev_prb_total = 0.0
-        self.burst_was_on = False
-        self.burst_on_times = []
-        self.burst_active_until = 0
-
-    def detect(self, row, now_ms):
-        severity = 0; stage1_hit = False; alert_type = "none"
-        prb_dl = float(row.get("prb_usage_dl_ratio", 0))
-        prb_ul = float(row.get("prb_usage_ul_ratio", 0))
-        prb_dl_pct = prb_dl * 100.0
-        prb_ul_pct = prb_ul * 100.0
-        empty_ind  = float(row.get("empty_ind_rate", 0))
-        air_delay  = float(row.get("air_delay_ul", 0))
-
-        # UL variance
-        self.ul_var_buf[self.ul_var_head] = prb_ul_pct
-        self.ul_var_head = (self.ul_var_head + 1) % 10
-        if self.ul_var_count < 10: self.ul_var_count += 1
-        ul_mean = sum(self.ul_var_buf[:self.ul_var_count]) / self.ul_var_count
-        prb_ul_variance = sum((v - ul_mean)**2 for v in self.ul_var_buf[:self.ul_var_count]) / self.ul_var_count
-
-        # DL variance
-        self.dl_var_buf[self.dl_var_head] = prb_dl_pct
-        self.dl_var_head = (self.dl_var_head + 1) % 10
-        if self.dl_var_count < 10: self.dl_var_count += 1
-        dl_mean = sum(self.dl_var_buf[:self.dl_var_count]) / self.dl_var_count
-        prb_dl_variance = sum((v - dl_mean)**2 for v in self.dl_var_buf[:self.dl_var_count]) / self.dl_var_count
-
-        # R1: UL saturation
-        if prb_ul_pct > 80.0 and prb_dl_pct < 15.0: self.ul_sat_cnt += 1
-        else: self.ul_sat_cnt = 0
-        if self.ul_sat_cnt >= 5 and not stage1_hit:
-            stage1_hit = True; alert_type = "ul_saturation"; severity = max(severity, 1)
-
-        # R2: DL saturation
-        if prb_dl_pct > 80.0 and prb_ul_pct < 30.0: self.dl_sat_cnt += 1
-        else: self.dl_sat_cnt = 0
-        if self.dl_sat_cnt >= 3 and not stage1_hit:
-            stage1_hit = True; alert_type = "dl_saturation"; severity = max(severity, 1)
-
-        # R3b: RRC storm via empty indications
-        if empty_ind >= 2.0 and prb_ul_pct < 30.0 and prb_dl_pct < 30.0:
-            self.empty_storm_cnt += 1; self.s2_rrc_cnt += 1
-        else:
-            self.empty_storm_cnt = 0; self.s2_rrc_cnt = 0
-        if self.empty_storm_cnt >= 3:
-            if not stage1_hit: stage1_hit = True; alert_type = "rrc_storm"
-            severity = max(severity, 1)
-        if self.s2_rrc_cnt >= 4: severity = max(severity, 2)
-
-        # R7: Radio collapse
-        prb_total_now = prb_dl + prb_ul
-        rf_collapse = (self.prev_prb_total > 0.4 and prb_total_now < 0.05 and air_delay < 1.0)
-        if rf_collapse: self.rf_susp_cnt += 1; self.s2_rf_cnt += 1
-        else: self.rf_susp_cnt = 0; self.s2_rf_cnt = 0
-        self.prev_prb_total = prb_total_now
-        if self.rf_susp_cnt >= 2 and not stage1_hit:
-            stage1_hit = True; alert_type = "radio_degradation"; severity = max(severity, 1)
-        if self.s2_rf_cnt >= 5: severity = max(severity, 2)
-
-        # R8: Periodic burst
-        burst_is_on = (prb_ul_pct > 70.0 and prb_dl_pct < 20.0)
-        if burst_is_on and not self.burst_was_on: self.burst_on_times.append(now_ms)
-        self.burst_was_on = burst_is_on
-        self.burst_on_times = [t for t in self.burst_on_times if now_ms - t <= 90000]
-        burst_on_count = len(self.burst_on_times)
-        if burst_on_count >= 2:
-            self.burst_active_until = max(self.burst_active_until,
-                                          max(self.burst_on_times) + 15000)
-        burst_alert = (self.burst_active_until > 0 and now_ms <= self.burst_active_until)
-        if burst_alert and not stage1_hit:
-            stage1_hit = True; alert_type = "periodic_burst"; severity = max(severity, 1)
-        if burst_alert and burst_on_count >= 4: severity = max(severity, 2)
-
-        # Stage 2: saturation persistence + variance flatline
-        sat_active = alert_type in ("ul_saturation", "dl_saturation")
-        if sat_active:
-            if self.s2_sat_start_ms == 0: self.s2_sat_start_ms = now_ms
-            self.s2_sat_dur_ms = now_ms - self.s2_sat_start_ms
-            self.s2_rec_start_ms = 0
-            if self.s2_sat_dur_ms >= 30000: severity = max(severity, 2)
-            if (alert_type == "ul_saturation" and self.s2_sat_dur_ms >= 3000
-                    and prb_ul_variance < 0.0001 and prb_ul_pct > 80.0):
-                severity = max(severity, 2)
-            if (alert_type == "dl_saturation" and self.s2_sat_dur_ms >= 3000
-                    and prb_dl_variance < 0.0001 and prb_dl_pct > 80.0):
-                severity = max(severity, 2)
-        else:
-            if self.s2_sat_start_ms != 0:
-                if self.s2_rec_start_ms == 0: self.s2_rec_start_ms = now_ms
-                if now_ms - self.s2_rec_start_ms >= 5000:
-                    self.s2_sat_start_ms = self.s2_sat_dur_ms = self.s2_rec_start_ms = 0
-
-        return severity, alert_type
-
-
-class LSTMDetector:
-    FEATURES = [
-        "prb_usage_dl_ratio", "prb_usage_ul_ratio",
-        "cqi", "rach_preamble", "air_delay_ul",
-        "prb_direction", "prb_total",
-        "prb_dl_delta", "prb_ul_delta", "prb_burst_index",
-        "empty_ind_rate",
-        "prb_dl_roll_mean", "prb_dl_roll_std",
-        "prb_ul_roll_std", "prb_ul_roll_max", "prb_ul_roll_max_100",
-    ]
-
-    def __init__(self, model_path):
-        self.sess = ort.InferenceSession(model_path)
-        self.window = np.zeros((WINDOW_SIZE, len(self.FEATURES)), dtype=np.float32)
-        self.filled = 0
-        self.anomaly_cnt = 0
-        self.stage2_start_ms = self.stage2_dur_ms = 0
-
-    def update(self, row, now_ms):
-        feat = np.array([float(row.get(f, 0)) for f in self.FEATURES], dtype=np.float32)
-        self.window = np.roll(self.window, -1, axis=0)
-        self.window[-1] = feat
-        if self.filled < WINDOW_SIZE:
-            self.filled += 1
-            return 0, 0.0
-        inp = self.window[np.newaxis].astype(np.float32)
-        score = float(self.sess.run(["score"], {"input": inp})[0][0])
-        if score > LSTM_THRESH:
-            self.anomaly_cnt += 1
-            if self.stage2_start_ms == 0: self.stage2_start_ms = now_ms
-            self.stage2_dur_ms = now_ms - self.stage2_start_ms
-        else:
-            self.anomaly_cnt = 0
-            self.stage2_start_ms = self.stage2_dur_ms = 0
-        sev = 0
-        if self.anomaly_cnt >= 3: sev = 1
-        if self.stage2_dur_ms >= 30000: sev = 2
-        return sev, score
-
-
-# ── Per-UE detectors (UE CSV: 15 base + 4 burst features, GRU v4) ─────────────
+# ── Per-UE detectors (Rule-Based + GRU/LSTM UE v4, 15+4 features) ────────────
 
 _UE_CSV_FEATURES = [
     "prb_usage_dl_ratio", "prb_usage_ul_ratio", "thp_dl_kbps", "thp_ul_kbps",
@@ -330,54 +175,37 @@ class LSTMUEDetector(GRUUEDetector):
 
 # ── CSV source helpers ────────────────────────────────────────────────────────
 
-REQUIRED_COL    = "prb_usage_dl_ratio"  # column that identifies compatible CSVs
-UE_MARKER_COL   = "thp_ul_kbps"         # present in UE CSV, absent in cell-level CSV
-
-def _csv_has_required_cols(path):
+def _csv_has_ue_cols(path):
     try:
         with open(path, newline="") as f:
             header = f.readline()
-        return REQUIRED_COL in header
+        return "thp_ul_kbps" in header
     except OSError:
         return False
 
 
-def is_ue_csv(rows):
-    """True if this CSV uses the per-UE feature schema (has thp_ul_kbps column)."""
-    return bool(rows) and UE_MARKER_COL in rows[0]
-
-
 def find_live_csv():
-    """Return the most recently modified training_*.csv with required columns."""
-    files = [f for f in glob.glob(os.path.join(CSV_DIR, "training_*.csv"))
-             if _csv_has_required_cols(f)]
+    """Return the most recently modified per_ue_training_*.csv."""
+    files = [f for f in glob.glob(os.path.join(CSV_DIR, "per_ue_training_*.csv"))
+             if _csv_has_ue_cols(f)]
     return max(files, key=os.path.getmtime) if files else None
 
 
 def get_csv_options():
-    """Return list of dcc.Dropdown options for all compatible CSVs, newest first."""
-    patterns = ["training_*.csv", "dataset_*.csv"]
-    all_files = []
+    """Return dropdown options for per-UE CSVs (per_ue_training_* + dataset_*ue*)."""
+    patterns = ["per_ue_training_*.csv", "dataset_*ue*.csv", "dataset_attack_ue*.csv",
+                "dataset_training_ue*.csv"]
+    seen = set(); items = []
     for pat in patterns:
-        all_files.extend(glob.glob(os.path.join(CSV_DIR, pat)))
-
-    seen = set()
-    items = []
-    for path in all_files:
-        if path in seen or not _csv_has_required_cols(path):
-            continue
-        seen.add(path)
-        mtime = os.path.getmtime(path)
-        name  = os.path.basename(path)
-        dt    = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
-        items.append((mtime, path, name, dt))
-
+        for path in glob.glob(os.path.join(CSV_DIR, pat)):
+            if path in seen or not _csv_has_ue_cols(path):
+                continue
+            seen.add(path)
+            mtime = os.path.getmtime(path)
+            dt    = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+            items.append((mtime, path, os.path.basename(path), dt))
     items.sort(key=lambda x: x[0], reverse=True)
-
-    options = []
-    for _, path, name, dt in items:
-        options.append({"label": f"{name}  ({dt})", "value": path})
-    return options
+    return [{"label": f"{n}  ({dt})", "value": p} for _, p, n, dt in items]
 
 
 def csv_label_summary(path):
@@ -437,16 +265,9 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
     # Collect available labels for info display
     available_labels = sorted({int(r["label"]) for r in all_rows})
 
-    ue_mode = is_ue_csv(all_rows)
-    if ue_mode:
-        ids       = RuleBasedUEIDS()
-        lstm_ue   = LSTMUEDetector(LSTM_UE_ONNX_MODEL)
-        gru_ue    = GRUUEDetector(UE_ONNX_MODEL)
-        label_names = UE_LABEL_NAMES
-    else:
-        ids  = RuleBasedIDS()
-        lstm = LSTMDetector(ONNX_MODEL)
-        label_names = LABEL_NAMES
+    ids     = RuleBasedUEIDS()
+    lstm_ue = LSTMUEDetector(LSTM_UE_ONNX_MODEL)
+    gru_ue  = GRUUEDetector(UE_ONNX_MODEL)
 
     labels     = []
     rule_sev   = []
@@ -460,23 +281,19 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
     for row in rows:
         lbl    = int(row["label"])
         now_ms = int(row["timestamp_ms"])
-        if ue_mode:
-            rsev             = ids.detect(row)
-            lstmsev, lstmsc  = lstm_ue.update(row)
-            grusev,  grusc   = gru_ue.update(row)
-            if det_mode == "rule":
-                lsev, lsc = 0, 0.0
-            elif det_mode == "lstm":
-                lsev, lsc = lstmsev, lstmsc
-            elif det_mode == "gru":
-                lsev, lsc = grusev, grusc
-            elif det_mode == "lstm_hybrid":
-                lsev, lsc = lstmsev, lstmsc
-            else:  # gru_hybrid / hybrid
-                lsev, lsc = grusev, grusc
-        else:
-            rsev, _     = ids.detect(row, now_ms)
-            lsev, lsc   = lstm.update(row, now_ms)
+        rsev            = ids.detect(row)
+        lstmsev, lstmsc = lstm_ue.update(row)
+        grusev,  grusc  = gru_ue.update(row)
+        if det_mode == "rule":
+            lsev, lsc = 0, 0.0
+        elif det_mode == "lstm":
+            lsev, lsc = lstmsev, lstmsc
+        elif det_mode == "gru":
+            lsev, lsc = grusev, grusc
+        elif det_mode == "lstm_hybrid":
+            lsev, lsc = lstmsev, lstmsc
+        else:  # gru_hybrid / hybrid
+            lsev, lsc = grusev, grusc
 
         if det_mode == "rule":
             fsev = rsev
@@ -553,8 +370,8 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
         "n_attack":        int(y_true.sum()),
         "label_mismatch":  label_mismatch,
         "available_labels": available_labels,
-        "label_names":     label_names,
-        "is_ue":           ue_mode,
+        "label_names":     LABEL_NAMES,
+        "is_ue":           True,
         "stage_metrics": {
             "Rule-Based": metrics(rule_sev),
             "LSTM":        metrics(lstm_sev),
@@ -630,7 +447,7 @@ app.layout = html.Div(style={"backgroundColor": BG, "minHeight": "100vh",
     html.Div(style={"marginBottom": "20px"}, children=[
         html.H1("Attack Detection Evaluation",
                 style={"color": ACCENT, "margin": 0, "fontSize": "22px"}),
-        html.P("Evaluasi offline Hybrid IDS (Rule-Based Stage 1 + LSTM Stage 2)",
+        html.P("Evaluasi offline Per-UE IDS (Rule-Based Stage 1 + GRU/LSTM-UE v4 Stage 2)",
                id="app-subtitle",
                style={"color": DIM, "margin": "4px 0 0 0", "fontSize": "13px"}),
     ]),
@@ -691,10 +508,10 @@ app.layout = html.Div(style={"backgroundColor": BG, "minHeight": "100vh",
                     html.Button("🧠 LSTM Only",       id="mode-lstm",       n_clicks=0,
                                 style=_btn_style(GOLD)),
                     html.Button("🤖 GRU Only",        id="mode-gru",        n_clicks=0,
-                                style={**_btn_style("#58A6FF"), "display": "none"}),
+                                style=_btn_style("#58A6FF")),
                     html.Button("⚡ LSTM Hybrid",     id="mode-lstm-hybrid",n_clicks=0,
-                                style={**_btn_style(GOLD), "display": "none"}),
-                    html.Button("★ Hybrid",           id="mode-hybrid",     n_clicks=0,
+                                style=_btn_style(GOLD)),
+                    html.Button("★ GRU Hybrid",       id="mode-hybrid",     n_clicks=0,
                                 style=_btn_style(GREEN, selected=True)),
                 ]),
             ]),
@@ -746,7 +563,6 @@ app.layout = html.Div(style={"backgroundColor": BG, "minHeight": "100vh",
     dcc.Store(id="active-attack", data=None),
     dcc.Store(id="active-mode",   data="hybrid"),
     dcc.Store(id="csv-source",    data="live"),
-    dcc.Store(id="ue-mode",       data=False),
     dcc.Interval(id="live-refresh", interval=10_000, disabled=False),
 ])
 
@@ -760,7 +576,6 @@ app.layout = html.Div(style={"backgroundColor": BG, "minHeight": "100vh",
     Output("csv-dropdown",  "value"),
     Output("csv-info",      "children"),
     Output("live-refresh",  "disabled"),
-    Output("ue-mode",       "data"),
     Input("btn-live-src",   "n_clicks"),
     Input("csv-dropdown",   "value"),
     Input("live-refresh",   "n_intervals"),
@@ -805,44 +620,7 @@ def handle_csv_source(live_clicks, dropdown_val, _intervals, current_source):
 
     btn_style = _btn_style(GREEN, selected=live_selected)
     interval_disabled = (source != "live")
-
-    # Detect UE CSV from header
-    ue = False
-    if path and os.path.exists(path):
-        try:
-            with open(path, newline="") as f:
-                ue = UE_MARKER_COL in f.readline()
-        except OSError:
-            pass
-
-    return source, btn_style, options, new_dd_val, info_el, interval_disabled, ue
-
-
-@app.callback(
-    Output("app-subtitle",     "children"),
-    Output("btn-rrc",          "children"),
-    Output("btn-rf",           "style"),
-    Output("mode-gru",         "style"),
-    Output("mode-lstm-hybrid", "style"),
-    Output("mode-hybrid",      "children"),
-    Input("ue-mode",           "data"),
-)
-def update_ue_ui(ue):
-    if ue:
-        subtitle     = "Evaluasi offline Hybrid IDS (Rule-Based Stage 1 + GRU/LSTM-UE v4 Stage 2)"
-        rrc_label    = "RoQ"
-        rf_style     = {**_btn_style("#555"), "opacity": "0.35", "cursor": "not-allowed"}
-        gru_style    = _btn_style("#58A6FF")           # visible
-        lstmh_style  = _btn_style(GOLD)                # visible
-        hybrid_label = "★ GRU Hybrid"
-    else:
-        subtitle     = "Evaluasi offline Hybrid IDS (Rule-Based Stage 1 + LSTM Stage 2)"
-        rrc_label    = "RRC Storm"
-        rf_style     = _btn_style("#D2A8FF")
-        gru_style    = {**_btn_style("#58A6FF"), "display": "none"}   # hidden
-        lstmh_style  = {**_btn_style(GOLD),     "display": "none"}    # hidden
-        hybrid_label = "★ Hybrid"
-    return subtitle, rrc_label, rf_style, gru_style, lstmh_style, hybrid_label
+    return source, btn_style, options, new_dd_val, info_el, interval_disabled
 
 
 @app.callback(
@@ -862,37 +640,29 @@ def store_attack(*_):
     Output("active-mode",      "data"),
     Output("mode-rule",        "style"),
     Output("mode-lstm",        "style"),
-    Output("mode-gru",         "style", allow_duplicate=True),
-    Output("mode-lstm-hybrid", "style", allow_duplicate=True),
+    Output("mode-gru",         "style"),
+    Output("mode-lstm-hybrid", "style"),
     Output("mode-hybrid",      "style"),
     Input("mode-rule",         "n_clicks"),
     Input("mode-lstm",         "n_clicks"),
     Input("mode-gru",          "n_clicks"),
     Input("mode-lstm-hybrid",  "n_clicks"),
     Input("mode-hybrid",       "n_clicks"),
-    State("ue-mode",           "data"),
     prevent_initial_call=True,
 )
-def store_mode(*args):
-    ue = args[-1]
+def store_mode(*_):
     tid = ctx.triggered_id
     mode = "hybrid"
     if   tid == "mode-rule":        mode = "rule"
     elif tid == "mode-lstm":        mode = "lstm"
     elif tid == "mode-gru":         mode = "gru"
     elif tid == "mode-lstm-hybrid": mode = "lstm_hybrid"
-    # gru_style and lstmh_style: keep visible if ue, else hidden
-    vis_gru   = _btn_style("#58A6FF", selected=(mode == "gru"))
-    vis_lstmh = _btn_style(GOLD,      selected=(mode == "lstm_hybrid"))
-    if not ue:
-        vis_gru   = {**vis_gru,   "display": "none"}
-        vis_lstmh = {**vis_lstmh, "display": "none"}
     return (
         mode,
         _btn_style(ACCENT, selected=(mode == "rule")),
-        _btn_style(GOLD,   selected=(mode == "lstm")),
-        vis_gru,
-        vis_lstmh,
+        _btn_style(GOLD,       selected=(mode == "lstm")),
+        _btn_style("#58A6FF", selected=(mode == "gru")),
+        _btn_style(GOLD,       selected=(mode == "lstm_hybrid")),
         _btn_style(GREEN,  selected=(mode in ("hybrid", "gru_hybrid"))),
     )
 
@@ -938,15 +708,14 @@ def update_dashboard(attack_filter, det_mode, csv_source):
         return (html.Span(f"⚠ CSV kosong atau tidak terbaca: {csv_name}", style={"color": GOLD}),
                 [], empty_fig, empty_fig, empty_fig, html.P("Tidak ada data.", style={"color": DIM}))
 
-    is_ue = result.get("is_ue", False)
-    ml_name   = ("GRU" if det_mode in ("gru", "gru_hybrid", "hybrid") else "LSTM") if is_ue else "LSTM"
-    ml_thresh = (GRU_UE_THRESH if det_mode in ("gru", "gru_hybrid", "hybrid") else LSTM_UE_THRESH) if is_ue else LSTM_THRESH
+    ml_name   = "GRU" if det_mode in ("gru", "gru_hybrid", "hybrid") else "LSTM"
+    ml_thresh = GRU_UE_THRESH if det_mode in ("gru", "gru_hybrid", "hybrid") else LSTM_UE_THRESH
     mode_labels = {
         "rule":        "Rule-Based Only",
         "lstm":        "LSTM Only",
         "gru":         "GRU Only",
         "lstm_hybrid": "⚡ LSTM Hybrid",
-        "hybrid":      "★ GRU Hybrid" if is_ue else "★ Hybrid",
+        "hybrid":      "★ GRU Hybrid",
     }
     active_m = result["active_metrics"]
     det_lat  = result["det_latency_avg"]
