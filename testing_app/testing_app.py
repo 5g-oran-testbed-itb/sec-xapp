@@ -577,7 +577,7 @@ app.layout = html.Div(style={"backgroundColor": BG, "minHeight": "100vh",
     ]),
 
     # Hidden stores
-    dcc.Store(id="active-attack", data=None),
+    dcc.Store(id="active-attack", data="all"),
     dcc.Store(id="active-mode",   data="hybrid"),
     dcc.Store(id="csv-source",    data="live"),
     dcc.Interval(id="live-refresh", interval=10_000, disabled=False),
@@ -709,12 +709,12 @@ def update_dashboard(attack_filter, det_mode, csv_source):
     if attack_filter is None:
         src_name = os.path.basename(resolved_csv) if resolved_csv else "—"
         msg = html.Span([
-            html.Span("← Pilih skenario serangan untuk memulai evaluasi.  ",
-                      style={"color": DIM}),
-            html.Span(f"[{src_name}]", style={"color": "#444", "fontSize": "12px"}),
+            html.Span("👆 Klik salah satu tombol Skenario Serangan di atas untuk memulai evaluasi",
+                      style={"color": GOLD, "fontWeight": "bold"}),
+            html.Span(f"  [{src_name}]", style={"color": DIM, "fontSize": "12px"}),
         ])
         cards = [_metric_card("—", "—") for _ in range(7)]
-        empty_table = html.P("Belum ada data.", style={"color": DIM})
+        empty_table = html.P("Belum ada data — pilih skenario serangan untuk memulai.", style={"color": DIM})
         return msg, cards, empty_fig, empty_fig, empty_fig, empty_table
 
     # Run evaluation
