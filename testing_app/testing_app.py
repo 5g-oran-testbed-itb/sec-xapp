@@ -637,6 +637,7 @@ def handle_csv_source(live_clicks, dropdown_val, _intervals, current_source):
 
     btn_style = _btn_style(GREEN, selected=live_selected)
     interval_disabled = (source != "live")
+
     return source, btn_style, options, new_dd_val, info_el, interval_disabled
 
 
@@ -693,7 +694,7 @@ def store_mode(*_):
     Output("stage-table",   "children"),
     Input("active-attack",  "data"),
     Input("active-mode",    "data"),
-    Input("csv-source",     "data"),
+    State("csv-source",     "data"),
 )
 def update_dashboard(attack_filter, det_mode, csv_source):
     empty_fig = go.Figure().update_layout(**_layout_base())
