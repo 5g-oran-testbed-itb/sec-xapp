@@ -1,0 +1,19 @@
+{
+  "uid": "xapp-ue-eval-tool",
+  "title": "xApp Security Monitor — Per-UE Evaluation Tool",
+  "tags": ["xapp", "security", "per-ue", "eval-tool"],
+  "timezone": "browser",
+  "refresh": "",
+  "time": { "from": "now-10m", "to": "now" },
+  "schemaVersion": 38,
+  "panels": [
+    {
+      "id": 1, "type": "text", "title": "Attack Detection Evaluation (testing_app)",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 28 },
+      "options": {
+        "mode": "html",
+        "content": "<iframe src=\"http://localhost:8050\" width=\"100%\" height=\"100%\" style=\"min-height:760px;border:none;border-radius:8px;\" frameborder=\"0\"></iframe>"
+      }
+    }
+  ]
+}

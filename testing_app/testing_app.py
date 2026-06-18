@@ -9,7 +9,7 @@ import os
 import numpy as np
 import onnxruntime as ort
 import dash
-from dash import dcc, html, Input, Output, State, ctx
+from dash import dcc, html, Input, Output, State, ctx, no_update
 import plotly.graph_objs as go
 from datetime import datetime
 from sklearn.metrics import (
@@ -603,6 +603,7 @@ def handle_csv_source(live_clicks, dropdown_val, _intervals, current_source):
     triggered = ctx.triggered_id
 
     # Determine new source
+    source_changed = True
     if triggered == "btn-live-src":
         source = "live"
         new_dd_val = None
@@ -613,6 +614,7 @@ def handle_csv_source(live_clicks, dropdown_val, _intervals, current_source):
         # Interval tick or initial load — keep current source
         source = current_source or "live"
         new_dd_val = None if source == "live" else source
+        source_changed = (triggered != "live-refresh")  # interval must NOT re-trigger eval
 
     # Resolve actual path for info display
     if source == "live":
@@ -638,7 +640,11 @@ def handle_csv_source(live_clicks, dropdown_val, _intervals, current_source):
     btn_style = _btn_style(GREEN, selected=live_selected)
     interval_disabled = (source != "live")
 
-    return source, btn_style, options, new_dd_val, info_el, interval_disabled
+    # On interval tick: refresh info bar only, keep csv-source unchanged so
+    # update_dashboard (which has csv-source as Input) does NOT re-run eval.
+    out_source = source if source_changed else no_update
+
+    return out_source, btn_style, options, new_dd_val, info_el, interval_disabled
 
 
 @app.callback(
@@ -694,7 +700,7 @@ def store_mode(*_):
     Output("stage-table",   "children"),
     Input("active-attack",  "data"),
     Input("active-mode",    "data"),
-    State("csv-source",     "data"),
+    Input("csv-source",     "data"),
 )
 def update_dashboard(attack_filter, det_mode, csv_source):
     empty_fig = go.Figure().update_layout(**_layout_base())
