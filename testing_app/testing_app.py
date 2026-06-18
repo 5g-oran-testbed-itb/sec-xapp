@@ -505,6 +505,7 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
         "label_mismatch":  label_mismatch,
         "available_labels": available_labels,
         "label_names":     label_names,
+        "is_ue":           ue_mode,
         "stage_metrics": {
             "Rule-Based": metrics(rule_sev),
             "LSTM":        metrics(lstm_sev),
@@ -581,6 +582,7 @@ app.layout = html.Div(style={"backgroundColor": BG, "minHeight": "100vh",
         html.H1("Attack Detection Evaluation",
                 style={"color": ACCENT, "margin": 0, "fontSize": "22px"}),
         html.P("Evaluasi offline Hybrid IDS (Rule-Based Stage 1 + LSTM Stage 2)",
+               id="app-subtitle",
                style={"color": DIM, "margin": "4px 0 0 0", "fontSize": "13px"}),
     ]),
 
@@ -689,6 +691,7 @@ app.layout = html.Div(style={"backgroundColor": BG, "minHeight": "100vh",
     dcc.Store(id="active-attack", data=None),
     dcc.Store(id="active-mode",   data="hybrid"),
     dcc.Store(id="csv-source",    data="live"),
+    dcc.Store(id="ue-mode",       data=False),
     dcc.Interval(id="live-refresh", interval=10_000, disabled=False),
 ])
 
@@ -702,6 +705,7 @@ app.layout = html.Div(style={"backgroundColor": BG, "minHeight": "100vh",
     Output("csv-dropdown",  "value"),
     Output("csv-info",      "children"),
     Output("live-refresh",  "disabled"),
+    Output("ue-mode",       "data"),
     Input("btn-live-src",   "n_clicks"),
     Input("csv-dropdown",   "value"),
     Input("live-refresh",   "n_intervals"),
@@ -747,7 +751,37 @@ def handle_csv_source(live_clicks, dropdown_val, _intervals, current_source):
     btn_style = _btn_style(GREEN, selected=live_selected)
     interval_disabled = (source != "live")
 
-    return source, btn_style, options, new_dd_val, info_el, interval_disabled
+    # Detect UE CSV from header
+    ue = False
+    if path and os.path.exists(path):
+        try:
+            with open(path, newline="") as f:
+                ue = UE_MARKER_COL in f.readline()
+        except OSError:
+            pass
+
+    return source, btn_style, options, new_dd_val, info_el, interval_disabled, ue
+
+
+@app.callback(
+    Output("app-subtitle",  "children"),
+    Output("btn-rrc",       "children"),
+    Output("btn-rf",        "style"),
+    Output("mode-lstm",     "children"),
+    Input("ue-mode",        "data"),
+)
+def update_ue_ui(ue):
+    if ue:
+        subtitle  = "Evaluasi offline Hybrid IDS (Rule-Based Stage 1 + GRU-UE v4 Stage 2)"
+        rrc_label = "RoQ"
+        rf_style  = {**_btn_style("#555"), "opacity": "0.35", "cursor": "not-allowed"}
+        ml_label  = "🤖 GRU Only"
+    else:
+        subtitle  = "Evaluasi offline Hybrid IDS (Rule-Based Stage 1 + LSTM Stage 2)"
+        rrc_label = "RRC Storm"
+        rf_style  = _btn_style("#D2A8FF")
+        ml_label  = "🧠 LSTM Only"
+    return subtitle, rrc_label, rf_style, ml_label
 
 
 @app.callback(
@@ -827,7 +861,10 @@ def update_dashboard(attack_filter, det_mode, csv_source):
         return (html.Span(f"⚠ CSV kosong atau tidak terbaca: {csv_name}", style={"color": GOLD}),
                 [], empty_fig, empty_fig, empty_fig, html.P("Tidak ada data.", style={"color": DIM}))
 
-    mode_labels = {"rule": "Rule-Based Only", "lstm": "LSTM Only", "hybrid": "★ Hybrid"}
+    is_ue = result.get("is_ue", False)
+    ml_name = "GRU" if is_ue else "LSTM"
+    ml_thresh = UE_THRESH if is_ue else LSTM_THRESH
+    mode_labels = {"rule": "Rule-Based Only", "lstm": f"{ml_name} Only", "hybrid": "★ Hybrid"}
     active_m = result["active_metrics"]
     det_lat  = result["det_latency_avg"]
     roc_auc  = result["roc_auc"]
@@ -863,7 +900,7 @@ def update_dashboard(attack_filter, det_mode, csv_source):
         _metric_card("Precision",      pct(active_m["precision"]), "%", mode_color),
         _metric_card("F1-Score",       pct(active_m["f1"]),        "%", mode_color, mode_color),
         _metric_card("FPR",            pct(active_m["fpr"]),       "%", GOLD),
-        _metric_card("ROC-AUC (LSTM)",
+        _metric_card(f"ROC-AUC ({ml_name})",
                      f"{roc_auc:.3f}" if roc_auc is not None else "N/A",
                      "", "#D2A8FF" if roc_auc is not None else DIM),
         _metric_card("Det. Latency",   lat_text,                   "ms", lat_color),
@@ -921,7 +958,7 @@ def update_dashboard(attack_filter, det_mode, csv_source):
     # ROC curve
     fig_roc = go.Figure()
     if result["fpr_arr"] is not None and result["tpr_arr"] is not None:
-        auc_label = f"LSTM AUC={roc_auc:.3f}" if roc_auc is not None else "LSTM"
+        auc_label = f"{ml_name} AUC={roc_auc:.3f}" if roc_auc is not None else ml_name
         fig_roc.add_trace(go.Scatter(x=result["fpr_arr"], y=result["tpr_arr"],
                                       name=auc_label,
                                       line=dict(color=GOLD, width=2)))
@@ -942,13 +979,13 @@ def update_dashboard(attack_filter, det_mode, csv_source):
     # LSTM score time-series
     fig_lstm = go.Figure()
     fig_lstm.add_trace(go.Scatter(x=t_rel, y=result["lstm_scores"],
-                                   name="LSTM Anomaly Score",
+                                   name=f"{ml_name} Anomaly Score",
                                    line=dict(color=GOLD, width=1.5),
                                    fill="tozeroy", fillcolor="rgba(255,165,2,0.08)"))
-    fig_lstm.add_hline(y=LSTM_THRESH, line_dash="dash", line_color=RED,
-                        annotation_text=f"threshold={LSTM_THRESH}",
+    fig_lstm.add_hline(y=ml_thresh, line_dash="dash", line_color=RED,
+                        annotation_text=f"threshold={ml_thresh}",
                         annotation_font_color=RED, annotation_font_size=10)
-    fig_lstm.update_layout(title="LSTM Anomaly Score",
+    fig_lstm.update_layout(title=f"{ml_name} Anomaly Score",
                             xaxis_title="Waktu (detik)", yaxis_title="Score",
                             **_layout_base())
 
