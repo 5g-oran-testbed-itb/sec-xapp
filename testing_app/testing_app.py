@@ -5,6 +5,7 @@ Evaluasi offline hybrid IDS per-UE (Rule-Based + GRU/LSTM-UE v4).
 import csv
 import glob
 import os
+import time
 
 import numpy as np
 import onnxruntime as ort
@@ -22,6 +23,8 @@ CSV_DIR            = os.getenv("CSV_DIR",            "/data/csv")
 UE_WINDOW_SIZE     = 30
 GRU_UE_THRESH      = 0.025969
 LSTM_UE_THRESH     = 0.025266
+XAPP_CYCLE_MS      = 120.0  # one xApp KPM/E2SM-RC cycle (mitigation control latency)
+_LAT_SAMPLE        = 300    # max windows/rows sampled for live latency profiling
 UE_ONNX_MODEL      = os.getenv("UE_ONNX_MODEL",      "/data/models/gru_ue_v4.onnx")
 LSTM_UE_ONNX_MODEL = os.getenv("LSTM_UE_ONNX_MODEL", "/data/models/lstm_ue_v4.onnx")
 LABEL_NAMES        = {0: "Normal", 1: "UL Flood", 2: "DL Flood", 3: "Burst ON/OFF", 4: "RoQ"}
@@ -379,6 +382,48 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
 
     det_latency_avg = float(np.mean(det_latencies)) if det_latencies else None
 
+    # ── Latency profiling (live, on actual data) ─────────────────────────────────
+    # Four distinct latencies (kept separate, not conflated):
+    #   inference  = window -> ONNX -> score          (ML only)
+    #   decision   = features -> alert decision        (all modes; rule eval / inference+compare)
+    #   mitigation = alert -> E2SM-RC -> control       (constant XAPP_CYCLE_MS)
+    #   e2e detect = attack start -> alert             (det_latency_avg, dominated by 1 Hz KPM)
+    def _p95(times_ms):
+        return float(np.percentile(times_ms, 95)) if times_ms else None
+
+    uses_ml   = det_mode in ("lstm", "gru", "lstm_hybrid", "hybrid")
+    uses_rule = det_mode in ("rule", "lstm_hybrid", "hybrid")
+    ml_sess   = _LSTM_SESS if det_mode in ("lstm", "lstm_hybrid") else _GRU_SESS
+
+    inference_p95 = None
+    if uses_ml and len(feat_full) >= UE_WINDOW_SIZE:
+        n_win = len(feat_full) - UE_WINDOW_SIZE + 1
+        idxs  = range(min(_LAT_SAMPLE, n_win))
+        t_inf = []
+        for k in idxs:
+            w = feat_full[k:k + UE_WINDOW_SIZE][np.newaxis].astype(np.float32)
+            t0 = time.perf_counter()
+            ml_sess.run(["mse"], {"input": w})
+            t_inf.append((time.perf_counter() - t0) * 1000.0)
+        inference_p95 = _p95(t_inf)
+
+    rule_p95 = None
+    if uses_rule and rows:
+        ids2  = RuleBasedUEIDS()
+        t_rul = []
+        for row in rows[:_LAT_SAMPLE]:
+            t0 = time.perf_counter()
+            ids2.detect(row)
+            t_rul.append((time.perf_counter() - t0) * 1000.0)
+        rule_p95 = _p95(t_rul)
+
+    if det_mode == "rule":
+        decision_p95 = rule_p95
+    elif det_mode in ("lstm", "gru"):
+        decision_p95 = inference_p95
+    else:  # lstm_hybrid / hybrid — both rule and ML run per decision
+        decision_p95 = (rule_p95 or 0.0) + (inference_p95 or 0.0)
+
     return {
         "csv_path":        csv_path,
         "attack_filter":   attack_filter,
@@ -401,6 +446,10 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
         "fpr_arr":    fpr_arr.tolist() if fpr_arr is not None else None,
         "tpr_arr":    tpr_arr.tolist() if tpr_arr is not None else None,
         "det_latency_avg": det_latency_avg,
+        "inference_p95_ms": inference_p95,
+        "decision_p95_ms":  decision_p95,
+        "mitigation_ms":    XAPP_CYCLE_MS,
+        "e2e_detection_s":  det_latency_avg,
         "timestamps":  timestamps.tolist(),
         "prb_dl":      prb_dl_arr,
         "prb_ul":      prb_ul_arr,
@@ -542,9 +591,17 @@ app.layout = html.Div(style={"backgroundColor": BG, "minHeight": "100vh",
     # Loading wrapper
     dcc.Loading(type="circle", color=ACCENT, children=[
 
-        # Metric cards
+        # Metric cards (quality)
         html.Div(id="metric-cards", style={"display": "grid",
-            "gridTemplateColumns": "repeat(7, 1fr)", "gap": "10px",
+            "gridTemplateColumns": "repeat(6, 1fr)", "gap": "10px",
+            "marginBottom": "10px"}),
+
+        # Latency breakdown (4 distinct latencies, not conflated)
+        html.Div("Latency Breakdown", style={"color": DIM, "fontSize": "11px",
+                 "textTransform": "uppercase", "letterSpacing": "0.5px",
+                 "margin": "4px 2px 6px"}),
+        html.Div(id="latency-cards", style={"display": "grid",
+            "gridTemplateColumns": "repeat(4, 1fr)", "gap": "10px",
             "marginBottom": "16px"}),
 
         # Charts row
@@ -694,6 +751,7 @@ def store_mode(*_):
 @app.callback(
     Output("status-bar",    "children"),
     Output("metric-cards",  "children"),
+    Output("latency-cards", "children"),
     Output("graph-prb",     "figure"),
     Output("graph-roc",     "figure"),
     Output("graph-lstm",    "figure"),
@@ -720,9 +778,10 @@ def update_dashboard(attack_filter, det_mode, csv_source):
                       style={"color": GOLD, "fontWeight": "bold"}),
             html.Span(f"  [{src_name}]", style={"color": DIM, "fontSize": "12px"}),
         ])
-        cards = [_metric_card("—", "—") for _ in range(7)]
+        cards = [_metric_card("—", "—") for _ in range(6)]
+        lat_cards = [_metric_card("—", "—") for _ in range(4)]
         empty_table = html.P("Belum ada data — pilih skenario serangan untuk memulai.", style={"color": DIM})
-        return msg, cards, empty_fig, empty_fig, empty_fig, empty_table
+        return msg, cards, lat_cards, empty_fig, empty_fig, empty_fig, empty_table
 
     # Run evaluation
     result = run_eval(attack_filter, det_mode, csv_path=resolved_csv)
@@ -742,7 +801,6 @@ def update_dashboard(attack_filter, det_mode, csv_source):
         "hybrid":      "★ GRU Hybrid",
     }
     active_m = result["active_metrics"]
-    det_lat  = result["det_latency_avg"]
     roc_auc  = result["roc_auc"]
 
     attack_name = dict((k, v) for _, k, v, _ in ATTACK_BUTTONS).get(attack_filter, attack_filter)
@@ -764,10 +822,8 @@ def update_dashboard(attack_filter, det_mode, csv_source):
                       style={"color": DIM, "fontSize": "12px"}),
         ])
 
-    # Metric cards — show active mode metrics prominently
+    # Quality metric cards — show active mode metrics prominently
     def pct(v): return f"{v*100:.1f}"
-    lat_text = f"{det_lat*1000:.0f}" if det_lat is not None else "N/A"
-    lat_color = GREEN if det_lat and det_lat < 2 else (GOLD if det_lat else DIM)
     mode_color = {"rule": ACCENT, "lstm": GOLD, "hybrid": GREEN}.get(det_mode, GREEN)
 
     cards = [
@@ -779,7 +835,21 @@ def update_dashboard(attack_filter, det_mode, csv_source):
         _metric_card(f"ROC-AUC ({ml_name})",
                      f"{roc_auc:.3f}" if roc_auc is not None else "N/A",
                      "", "#D2A8FF" if roc_auc is not None else DIM),
-        _metric_card("Det. Latency",   lat_text,                   "ms", lat_color),
+    ]
+
+    # Latency breakdown cards — 4 distinct latencies
+    inf_p95 = result.get("inference_p95_ms")
+    dec_p95 = result.get("decision_p95_ms")
+    e2e_s   = result.get("e2e_detection_s")
+    def _ms(v, dec=3): return f"{v:.{dec}f}" if v is not None else "N/A"
+    lat_cards = [
+        _metric_card("Inference (P95)", _ms(inf_p95), "ms",
+                     "#D2A8FF" if inf_p95 is not None else DIM),
+        _metric_card("Decision (P95)",  _ms(dec_p95), "ms",
+                     GREEN if dec_p95 is not None else DIM),
+        _metric_card("Mitigation",      f"{result['mitigation_ms']:.0f}", "ms", GOLD),
+        _metric_card("E2E Detection",   f"{e2e_s:.2f}" if e2e_s is not None else "N/A",
+                     "s", GREEN if (e2e_s is not None and e2e_s < 5) else GOLD),
     ]
 
     # PRB time-series
@@ -918,7 +988,7 @@ def update_dashboard(attack_filter, det_mode, csv_source):
         ]),
     ])
 
-    return status, cards, fig_prb, fig_roc, fig_lstm, table
+    return status, cards, lat_cards, fig_prb, fig_roc, fig_lstm, table
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
