@@ -55,7 +55,7 @@
     },
     {
       "id": 3, "type": "stat", "title": "Selected UE Alert Status",
-      "gridPos": { "x": 8, "y": 0, "w": 8, "h": 4 },
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
       "fieldConfig": {
         "defaults": {
           "mappings": [
@@ -73,6 +73,54 @@
       },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "vertical" },
       "targets": [{ "expr": "xapp_ue_alert_type{rnti=~\"$rnti\"}", "instant": true, "legendFormat": "{{rnti}}" }]
+    },
+    {
+      "id": 11, "type": "stat", "title": "Total Alerts Aktif",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "value": null, "color": "green" },
+            { "value": 1,    "color": "orange" }
+          ]}
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "count(xapp_ue_alert_type > 0) or vector(0)", "instant": true, "legendFormat": "" }]
+    },
+    {
+      "id": 12, "type": "stat", "title": "Avg MSE (on alert)",
+      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 4,
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "value": null, "color": "green" },
+            { "value": 0.025969, "color": "orange" },
+            { "value": 0.05,     "color": "red" }
+          ]}
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "avg(xapp_ue_mse > 0) or vector(0)", "instant": true, "legendFormat": "" }]
+    },
+    {
+      "id": 13, "type": "stat", "title": "Max Stage Aktif",
+      "gridPos": { "x": 20, "y": 0, "w": 4, "h": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "value": null, "color": "green" },
+            { "value": 1,    "color": "orange" },
+            { "value": 2,    "color": "red" }
+          ]}
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "max(xapp_ue_stage) or vector(0)", "instant": true, "legendFormat": "" }]
     },
     {
       "id": 5, "type": "timeseries", "title": "Detection Stage per UE",
