@@ -48,10 +48,12 @@ services:
       - ./security_model.onnx:/data/security_model.onnx:ro
       - ./security_model.onnx.data:/data/security_model.onnx.data:ro
       - ./models/gru_ue_v4.onnx:/data/models/gru_ue_v4.onnx:ro
+      - ./models/lstm_ue_v4.onnx:/data/models/lstm_ue_v4.onnx:ro
     environment:
       - CSV_DIR=/data/csv
       - ONNX_MODEL=/data/security_model.onnx
       - UE_ONNX_MODEL=/data/models/gru_ue_v4.onnx
+      - LSTM_UE_ONNX_MODEL=/data/models/lstm_ue_v4.onnx
     restart: unless-stopped
 
   grafana:

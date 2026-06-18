@@ -24,10 +24,12 @@ ONNX_MODEL = os.getenv("ONNX_MODEL", "/data/security_model.onnx")
 WINDOW_SIZE = 10
 LSTM_THRESH = 0.5
 
-UE_WINDOW_SIZE = 30
-UE_THRESH      = 0.025969
-UE_ONNX_MODEL  = os.getenv("UE_ONNX_MODEL", "/data/models/gru_ue_v4.onnx")
-UE_LABEL_NAMES = {0: "Normal", 1: "UL Flood", 2: "DL Flood", 3: "Burst ON/OFF", 4: "RoQ"}
+UE_WINDOW_SIZE    = 30
+GRU_UE_THRESH     = 0.025969
+LSTM_UE_THRESH    = 0.025266
+UE_ONNX_MODEL     = os.getenv("UE_ONNX_MODEL",      "/data/models/gru_ue_v4.onnx")
+LSTM_UE_ONNX_MODEL= os.getenv("LSTM_UE_ONNX_MODEL", "/data/models/lstm_ue_v4.onnx")
+UE_LABEL_NAMES    = {0: "Normal", 1: "UL Flood", 2: "DL Flood", 3: "Burst ON/OFF", 4: "RoQ"}
 
 ATTACK_BUTTONS = [
     ("btn-ul",    "1",   "UL Flood",    "#FF6B35"),
@@ -287,7 +289,42 @@ class GRUUEDetector:
 
         inp = self.window[np.newaxis].astype(np.float32)
         score = float(self.sess.run(["mse"], {"input": inp})[0][0])
-        sev = 1 if score > UE_THRESH else 0
+        sev = 1 if score > GRU_UE_THRESH else 0
+        return sev, score
+
+
+class LSTMUEDetector(GRUUEDetector):
+    """Same architecture as GRUUEDetector, different model + threshold."""
+
+    def update(self, row):
+        prb_ul = float(row.get("prb_usage_ul_ratio", 0))
+        prb_dl = float(row.get("prb_usage_dl_ratio", 0))
+        thp_ul = float(row.get("thp_ul_kbps", 0))
+        thp_dl = float(row.get("thp_dl_kbps", 0))
+
+        prb_ul_mean = self._push(self._prb_ul_buf, prb_ul)
+        prb_dl_mean = self._push(self._prb_dl_buf, prb_dl)
+        thp_ul_mean = self._push(self._thp_ul_buf, thp_ul)
+        thp_dl_mean = self._push(self._thp_dl_buf, thp_dl)
+
+        base = [float(row.get(c, 0)) for c in _UE_CSV_FEATURES]
+        burst = [
+            min(np.log1p(prb_ul) / (prb_ul_mean + _UE_EPS), _UE_BURST_CLIP),
+            min(np.log1p(prb_dl) / (prb_dl_mean + _UE_EPS), _UE_BURST_CLIP),
+            min(thp_ul / (thp_ul_mean + 1.0), _UE_BURST_CLIP),
+            min(thp_dl / (thp_dl_mean + 1.0), _UE_BURST_CLIP),
+        ]
+        feat = np.array(base + burst, dtype=np.float32)
+
+        self.window = np.roll(self.window, -1, axis=0)
+        self.window[-1] = feat
+        if self.filled < UE_WINDOW_SIZE:
+            self.filled += 1
+            return 0, 0.0
+
+        inp = self.window[np.newaxis].astype(np.float32)
+        score = float(self.sess.run(["mse"], {"input": inp})[0][0])
+        sev = 1 if score > LSTM_UE_THRESH else 0
         return sev, score
 
 
@@ -402,8 +439,9 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
 
     ue_mode = is_ue_csv(all_rows)
     if ue_mode:
-        ids  = RuleBasedUEIDS()
-        lstm = GRUUEDetector(UE_ONNX_MODEL)
+        ids       = RuleBasedUEIDS()
+        lstm_ue   = LSTMUEDetector(LSTM_UE_ONNX_MODEL)
+        gru_ue    = GRUUEDetector(UE_ONNX_MODEL)
         label_names = UE_LABEL_NAMES
     else:
         ids  = RuleBasedIDS()
@@ -423,17 +461,28 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
         lbl    = int(row["label"])
         now_ms = int(row["timestamp_ms"])
         if ue_mode:
-            rsev        = ids.detect(row)
-            lsev, lsc   = lstm.update(row)
+            rsev             = ids.detect(row)
+            lstmsev, lstmsc  = lstm_ue.update(row)
+            grusev,  grusc   = gru_ue.update(row)
+            if det_mode == "rule":
+                lsev, lsc = 0, 0.0
+            elif det_mode == "lstm":
+                lsev, lsc = lstmsev, lstmsc
+            elif det_mode == "gru":
+                lsev, lsc = grusev, grusc
+            elif det_mode == "lstm_hybrid":
+                lsev, lsc = lstmsev, lstmsc
+            else:  # gru_hybrid / hybrid
+                lsev, lsc = grusev, grusc
         else:
             rsev, _     = ids.detect(row, now_ms)
             lsev, lsc   = lstm.update(row, now_ms)
 
         if det_mode == "rule":
             fsev = rsev
-        elif det_mode == "lstm":
+        elif det_mode in ("lstm", "gru"):
             fsev = lsev
-        else:
+        else:  # hybrid, lstm_hybrid, gru_hybrid
             fsev = max(rsev, lsev)
 
         labels.append(lbl)
@@ -634,12 +683,18 @@ app.layout = html.Div(style={"backgroundColor": BG, "minHeight": "100vh",
             # Detection mode toggle
             html.Div(style={"display": "flex", "flexDirection": "column", "gap": "8px"}, children=[
                 html.Div("Mode Deteksi:", style={"color": DIM, "fontSize": "11px"}),
-                html.Div(style={"display": "flex", "gap": "8px"}, children=[
-                    html.Button("📐 Rule-Based Only", id="mode-rule",  n_clicks=0,
+                html.Div(id="mode-btn-row",
+                         style={"display": "flex", "gap": "8px", "flexWrap": "wrap"},
+                         children=[
+                    html.Button("📐 Rule-Based Only", id="mode-rule",       n_clicks=0,
                                 style=_btn_style(ACCENT)),
-                    html.Button("🧠 LSTM Only",       id="mode-lstm",  n_clicks=0,
+                    html.Button("🧠 LSTM Only",       id="mode-lstm",       n_clicks=0,
                                 style=_btn_style(GOLD)),
-                    html.Button("★ Hybrid",           id="mode-hybrid",n_clicks=0,
+                    html.Button("🤖 GRU Only",        id="mode-gru",        n_clicks=0,
+                                style={**_btn_style("#58A6FF"), "display": "none"}),
+                    html.Button("⚡ LSTM Hybrid",     id="mode-lstm-hybrid",n_clicks=0,
+                                style={**_btn_style(GOLD), "display": "none"}),
+                    html.Button("★ Hybrid",           id="mode-hybrid",     n_clicks=0,
                                 style=_btn_style(GREEN, selected=True)),
                 ]),
             ]),
@@ -764,24 +819,30 @@ def handle_csv_source(live_clicks, dropdown_val, _intervals, current_source):
 
 
 @app.callback(
-    Output("app-subtitle",  "children"),
-    Output("btn-rrc",       "children"),
-    Output("btn-rf",        "style"),
-    Output("mode-lstm",     "children"),
-    Input("ue-mode",        "data"),
+    Output("app-subtitle",     "children"),
+    Output("btn-rrc",          "children"),
+    Output("btn-rf",           "style"),
+    Output("mode-gru",         "style"),
+    Output("mode-lstm-hybrid", "style"),
+    Output("mode-hybrid",      "children"),
+    Input("ue-mode",           "data"),
 )
 def update_ue_ui(ue):
     if ue:
-        subtitle  = "Evaluasi offline Hybrid IDS (Rule-Based Stage 1 + GRU-UE v4 Stage 2)"
-        rrc_label = "RoQ"
-        rf_style  = {**_btn_style("#555"), "opacity": "0.35", "cursor": "not-allowed"}
-        ml_label  = "🤖 GRU Only"
+        subtitle     = "Evaluasi offline Hybrid IDS (Rule-Based Stage 1 + GRU/LSTM-UE v4 Stage 2)"
+        rrc_label    = "RoQ"
+        rf_style     = {**_btn_style("#555"), "opacity": "0.35", "cursor": "not-allowed"}
+        gru_style    = _btn_style("#58A6FF")           # visible
+        lstmh_style  = _btn_style(GOLD)                # visible
+        hybrid_label = "★ GRU Hybrid"
     else:
-        subtitle  = "Evaluasi offline Hybrid IDS (Rule-Based Stage 1 + LSTM Stage 2)"
-        rrc_label = "RRC Storm"
-        rf_style  = _btn_style("#D2A8FF")
-        ml_label  = "🧠 LSTM Only"
-    return subtitle, rrc_label, rf_style, ml_label
+        subtitle     = "Evaluasi offline Hybrid IDS (Rule-Based Stage 1 + LSTM Stage 2)"
+        rrc_label    = "RRC Storm"
+        rf_style     = _btn_style("#D2A8FF")
+        gru_style    = {**_btn_style("#58A6FF"), "display": "none"}   # hidden
+        lstmh_style  = {**_btn_style(GOLD),     "display": "none"}    # hidden
+        hybrid_label = "★ Hybrid"
+    return subtitle, rrc_label, rf_style, gru_style, lstmh_style, hybrid_label
 
 
 @app.callback(
@@ -798,25 +859,41 @@ def store_attack(*_):
 
 
 @app.callback(
-    Output("active-mode",    "data"),
-    Output("mode-rule",      "style"),
-    Output("mode-lstm",      "style"),
-    Output("mode-hybrid",    "style"),
-    Input("mode-rule",       "n_clicks"),
-    Input("mode-lstm",       "n_clicks"),
-    Input("mode-hybrid",     "n_clicks"),
+    Output("active-mode",      "data"),
+    Output("mode-rule",        "style"),
+    Output("mode-lstm",        "style"),
+    Output("mode-gru",         "style", allow_duplicate=True),
+    Output("mode-lstm-hybrid", "style", allow_duplicate=True),
+    Output("mode-hybrid",      "style"),
+    Input("mode-rule",         "n_clicks"),
+    Input("mode-lstm",         "n_clicks"),
+    Input("mode-gru",          "n_clicks"),
+    Input("mode-lstm-hybrid",  "n_clicks"),
+    Input("mode-hybrid",       "n_clicks"),
+    State("ue-mode",           "data"),
     prevent_initial_call=True,
 )
-def store_mode(*_):
+def store_mode(*args):
+    ue = args[-1]
     tid = ctx.triggered_id
     mode = "hybrid"
-    if tid == "mode-rule":  mode = "rule"
-    elif tid == "mode-lstm": mode = "lstm"
+    if   tid == "mode-rule":        mode = "rule"
+    elif tid == "mode-lstm":        mode = "lstm"
+    elif tid == "mode-gru":         mode = "gru"
+    elif tid == "mode-lstm-hybrid": mode = "lstm_hybrid"
+    # gru_style and lstmh_style: keep visible if ue, else hidden
+    vis_gru   = _btn_style("#58A6FF", selected=(mode == "gru"))
+    vis_lstmh = _btn_style(GOLD,      selected=(mode == "lstm_hybrid"))
+    if not ue:
+        vis_gru   = {**vis_gru,   "display": "none"}
+        vis_lstmh = {**vis_lstmh, "display": "none"}
     return (
         mode,
-        _btn_style(ACCENT,  selected=(mode == "rule")),
-        _btn_style(GOLD,    selected=(mode == "lstm")),
-        _btn_style(GREEN,   selected=(mode == "hybrid")),
+        _btn_style(ACCENT, selected=(mode == "rule")),
+        _btn_style(GOLD,   selected=(mode == "lstm")),
+        vis_gru,
+        vis_lstmh,
+        _btn_style(GREEN,  selected=(mode in ("hybrid", "gru_hybrid"))),
     )
 
 
@@ -862,9 +939,15 @@ def update_dashboard(attack_filter, det_mode, csv_source):
                 [], empty_fig, empty_fig, empty_fig, html.P("Tidak ada data.", style={"color": DIM}))
 
     is_ue = result.get("is_ue", False)
-    ml_name = "GRU" if is_ue else "LSTM"
-    ml_thresh = UE_THRESH if is_ue else LSTM_THRESH
-    mode_labels = {"rule": "Rule-Based Only", "lstm": f"{ml_name} Only", "hybrid": "★ Hybrid"}
+    ml_name   = ("GRU" if det_mode in ("gru", "gru_hybrid", "hybrid") else "LSTM") if is_ue else "LSTM"
+    ml_thresh = (GRU_UE_THRESH if det_mode in ("gru", "gru_hybrid", "hybrid") else LSTM_UE_THRESH) if is_ue else LSTM_THRESH
+    mode_labels = {
+        "rule":        "Rule-Based Only",
+        "lstm":        "LSTM Only",
+        "gru":         "GRU Only",
+        "lstm_hybrid": "⚡ LSTM Hybrid",
+        "hybrid":      "★ GRU Hybrid" if is_ue else "★ Hybrid",
+    }
     active_m = result["active_metrics"]
     det_lat  = result["det_latency_avg"]
     roc_auc  = result["roc_auc"]
