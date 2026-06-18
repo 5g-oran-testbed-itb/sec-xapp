@@ -75,19 +75,20 @@
       "targets": [{ "expr": "xapp_ue_alert_type{rnti=~\"$rnti\"}", "instant": true, "legendFormat": "{{rnti}}" }]
     },
     {
-      "id": 11, "type": "stat", "title": "Total Alerts Aktif",
+      "id": 11, "type": "stat", "title": "Max Alert Severity",
       "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
           "thresholds": { "mode": "absolute", "steps": [
             { "value": null, "color": "green" },
-            { "value": 1,    "color": "orange" }
+            { "value": 1,    "color": "orange" },
+            { "value": 2,    "color": "red" }
           ]}
         }
       },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
-      "targets": [{ "expr": "count(xapp_ue_alert_type > 0) or vector(0)", "instant": true, "legendFormat": "" }]
+      "targets": [{ "expr": "max(xapp_ue_alert_type) or vector(0)", "instant": true, "legendFormat": "" }]
     },
     {
       "id": 12, "type": "stat", "title": "Avg MSE (on alert)",
