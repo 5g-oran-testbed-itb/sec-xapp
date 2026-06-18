@@ -790,26 +790,42 @@ def update_dashboard(attack_filter, det_mode, csv_source):
 
     fig_prb = go.Figure()
 
-    # Shade attack regions
-    prev_lbl = 0
-    seg_start = None
+    # Shade attack regions — build shapes/annotations as lists and apply ONCE.
+    # (fig.add_vrect in a loop is O(n^2): each call re-validates all shapes,
+    #  taking ~65s for ~500 regions on large datasets → perpetual spinner.)
     attack_colors = {"1": "rgba(255,107,53,0.12)", "2": "rgba(255,71,87,0.12)",
                      "3": "rgba(255,165,2,0.12)",  "4": "rgba(255,99,72,0.12)"}
+    shapes = []
+    annotations = []
+    prev_lbl = 0
+    seg_start = None
     for i, lbl in enumerate(labels):
         if lbl != 0 and prev_lbl == 0:
             seg_start = t_rel[i]
         if lbl == 0 and prev_lbl != 0 and seg_start is not None:
             color = attack_colors.get(str(prev_lbl), "rgba(255,255,255,0.08)")
-            fig_prb.add_vrect(x0=seg_start, x1=t_rel[i], fillcolor=color,
-                              layer="below", line_width=0,
-                              annotation_text=_lnames.get(prev_lbl, ""),
-                              annotation_font_color=DIM, annotation_font_size=10)
+            shapes.append(dict(type="rect", xref="x", yref="paper",
+                               x0=seg_start, x1=t_rel[i], y0=0, y1=1,
+                               fillcolor=color, layer="below", line_width=0))
+            annotations.append(dict(x=(seg_start + t_rel[i]) / 2, y=1, yref="paper",
+                                    text=_lnames.get(prev_lbl, ""), showarrow=False,
+                                    font=dict(color=DIM, size=10)))
             seg_start = None
         prev_lbl = lbl
     if seg_start is not None:
         color = attack_colors.get(str(prev_lbl), "rgba(255,255,255,0.08)")
-        fig_prb.add_vrect(x0=seg_start, x1=t_rel[-1], fillcolor=color,
-                          layer="below", line_width=0)
+        shapes.append(dict(type="rect", xref="x", yref="paper",
+                           x0=seg_start, x1=t_rel[-1], y0=0, y1=1,
+                           fillcolor=color, layer="below", line_width=0))
+
+    # 80% threshold line as a shape (avoid add_hline re-validation too)
+    if t_rel:
+        shapes.append(dict(type="line", xref="x", yref="y",
+                           x0=t_rel[0], x1=t_rel[-1], y0=80, y1=80,
+                           line=dict(color="#555", width=1, dash="dash")))
+        annotations.append(dict(x=t_rel[-1], y=80, yref="y", text="80% threshold",
+                                showarrow=False, font=dict(color=DIM, size=10),
+                                xanchor="right", yanchor="bottom"))
 
     fig_prb.add_trace(go.Scatter(x=t_rel, y=[v*100 for v in result["prb_dl"]],
                                   name="PRB DL (%)", line=dict(color=ACCENT, width=1.5)))
@@ -824,12 +840,10 @@ def update_dashboard(attack_filter, det_mode, csv_source):
                                       name="Detection",
                                       marker=dict(symbol="x", size=6, color=GREEN)))
 
-    fig_prb.add_hline(y=80, line_dash="dash", line_color="#555",
-                      annotation_text="80% threshold", annotation_font_color=DIM,
-                      annotation_font_size=10)
     fig_prb.update_layout(title=f"PRB Utilization — {attack_name}",
                            xaxis_title="Waktu (detik)", yaxis_title="PRB (%)",
-                           yaxis_range=[0, 105], **_layout_base())
+                           yaxis_range=[0, 105], shapes=shapes, annotations=annotations,
+                           **_layout_base())
 
     # ROC curve
     fig_roc = go.Figure()
