@@ -6,6 +6,7 @@ import csv
 import glob
 import os
 import time
+from collections import OrderedDict
 
 import numpy as np
 import onnxruntime as ort
@@ -272,9 +273,14 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
     # Collect available labels for info display
     available_labels = sorted({int(r["label"]) for r in all_rows})
 
-    # ── Feature extraction (vectorized) ─────────────────────────────────────────
-    feat_base = np.array([[float(r.get(c, 0.0)) for c in _UE_CSV_FEATURES]
-                          for r in rows], dtype=np.float32)  # (N, 15)
+    # ── Per-RNTI processing ──────────────────────────────────────────────────────
+    # The dataset interleaves multiple UEs row-by-row (rnti 7 attack alternates
+    # with rnti 8 benign every row). Rolling means, ML windows, rule counters and
+    # detection segments MUST be computed on each UE's own timeline — never across
+    # the mixed file order. Mirrors split_by_rnti() in evaluate_per_ue_v2.py.
+    rnti_groups = OrderedDict()
+    for idx, r in enumerate(rows):
+        rnti_groups.setdefault(r.get("rnti", "0"), []).append(idx)
 
     def _rmean(arr, w=_UE_BURST_WIN):
         out = np.empty(len(arr), dtype=np.float64)
@@ -282,59 +288,71 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
             out[i] = arr[max(0, i - w + 1):i + 1].mean()
         return out
 
-    prb_ul_m = _rmean(feat_base[:, 1])
-    prb_dl_m = _rmean(feat_base[:, 0])
-    thp_ul_m = _rmean(feat_base[:, 3])
-    thp_dl_m = _rmean(feat_base[:, 2])
-
-    burst = np.stack([
-        np.clip(np.log1p(feat_base[:, 1]) / (prb_ul_m + _UE_EPS), 0, _UE_BURST_CLIP),
-        np.clip(np.log1p(feat_base[:, 0]) / (prb_dl_m + _UE_EPS), 0, _UE_BURST_CLIP),
-        np.clip(feat_base[:, 3] / (thp_ul_m + 1.0),               0, _UE_BURST_CLIP),
-        np.clip(feat_base[:, 2] / (thp_dl_m + 1.0),               0, _UE_BURST_CLIP),
-    ], axis=1).astype(np.float32)  # (N, 4)
-
-    feat_full = np.concatenate([feat_base, burst], axis=1)  # (N, 19)
-
-    # ── Rule-based (stateful, pure Python) ───────────────────────────────────────
-    ids = RuleBasedUEIDS()
-    rule_sev = np.array([ids.detect(row) for row in rows], dtype=int)
-
-    # ── Batch ML inference ────────────────────────────────────────────────────────
     def _batch_infer(sess, X, thresh):
-        N = len(X)
-        if N < UE_WINDOW_SIZE:
-            return np.zeros(N, np.float32), np.zeros(N, int)
-        # stride_tricks: view without copying, then transpose to (N-29, 30, 19)
+        m = len(X)
+        if m < UE_WINDOW_SIZE:
+            return np.zeros(m, np.float32), np.zeros(m, int)
         view = np.lib.stride_tricks.sliding_window_view(X, UE_WINDOW_SIZE, axis=0)
         wins = np.ascontiguousarray(view.transpose(0, 2, 1)).astype(np.float32)
         sc = sess.run(["mse"], {"input": wins})[0]
-        scores = np.zeros(N, np.float32)
+        scores = np.zeros(m, np.float32)
         scores[UE_WINDOW_SIZE - 1:] = sc
         return scores, (scores > thresh).astype(int)
 
-    _zero_sev    = np.zeros(len(rows), int)
-    _zero_scores = np.zeros(len(rows), np.float32)
+    N = len(rows)
+    rule_sev    = np.zeros(N, dtype=int)
+    lstm_sev    = np.zeros(N, dtype=int);   lstm_scores = np.zeros(N, dtype=np.float32)
+    gru_sev     = np.zeros(N, dtype=int);   gru_scores  = np.zeros(N, dtype=np.float32)
+    feat_full   = np.zeros((N, 19), dtype=np.float32)
 
+    use_lstm = det_mode in ("lstm", "lstm_hybrid")
+    use_gru  = det_mode in ("gru", "hybrid")
+
+    for rnti, idxs in rnti_groups.items():
+        grp = [rows[i] for i in idxs]
+        fb  = np.array([[float(r.get(c, 0.0)) for c in _UE_CSV_FEATURES] for r in grp],
+                       dtype=np.float32)  # (g, 15)
+        prb_ul_m = _rmean(fb[:, 1]); prb_dl_m = _rmean(fb[:, 0])
+        thp_ul_m = _rmean(fb[:, 3]); thp_dl_m = _rmean(fb[:, 2])
+        burst = np.stack([
+            np.clip(np.log1p(fb[:, 1]) / (prb_ul_m + _UE_EPS), 0, _UE_BURST_CLIP),
+            np.clip(np.log1p(fb[:, 0]) / (prb_dl_m + _UE_EPS), 0, _UE_BURST_CLIP),
+            np.clip(fb[:, 3] / (thp_ul_m + 1.0),               0, _UE_BURST_CLIP),
+            np.clip(fb[:, 2] / (thp_dl_m + 1.0),               0, _UE_BURST_CLIP),
+        ], axis=1).astype(np.float32)
+        ff = np.concatenate([fb, burst], axis=1)  # (g, 19)
+        idx_arr = np.array(idxs)
+        feat_full[idx_arr] = ff
+
+        # Rule — fresh per-UE counter state
+        ids = RuleBasedUEIDS()
+        for k, r in enumerate(grp):
+            rule_sev[idxs[k]] = ids.detect(r)
+
+        # ML — windows confined to this UE's timeline
+        if use_lstm:
+            sc, sv = _batch_infer(_LSTM_SESS, ff, LSTM_UE_THRESH)
+            lstm_scores[idx_arr] = sc; lstm_sev[idx_arr] = sv
+        if use_gru:
+            sc, sv = _batch_infer(_GRU_SESS, ff, GRU_UE_THRESH)
+            gru_scores[idx_arr] = sc; gru_sev[idx_arr] = sv
+
+    # ── Combine into active ML + final severity ──────────────────────────────────
     if det_mode == "rule":
-        gru_scores = gru_sev = lstm_scores = lstm_sev = _zero_scores
-        lstm_sev = _zero_sev
         final_sev = rule_sev
-    elif det_mode in ("lstm", "lstm_hybrid"):
-        lstm_scores, lstm_sev = _batch_infer(_LSTM_SESS, feat_full, LSTM_UE_THRESH)
-        gru_scores = gru_sev = _zero_scores
-        final_sev = np.maximum(rule_sev, lstm_sev) if det_mode == "lstm_hybrid" else lstm_sev
-    elif det_mode in ("gru", "hybrid"):
-        gru_scores, gru_sev   = _batch_infer(_GRU_SESS,  feat_full, GRU_UE_THRESH)
-        lstm_scores, lstm_sev = gru_scores, gru_sev
-        final_sev = np.maximum(rule_sev, gru_sev) if det_mode == "hybrid" else gru_sev
-    else:  # gru_hybrid
-        gru_scores, gru_sev   = _batch_infer(_GRU_SESS,  feat_full, GRU_UE_THRESH)
-        lstm_scores, lstm_sev = gru_scores, gru_sev
+    elif det_mode == "lstm":
+        final_sev = lstm_sev
+    elif det_mode == "gru":
+        lstm_sev, lstm_scores = gru_sev, gru_scores
+        final_sev = gru_sev
+    elif det_mode == "lstm_hybrid":
+        final_sev = np.maximum(rule_sev, lstm_sev)
+    else:  # hybrid / gru_hybrid
+        lstm_sev, lstm_scores = gru_sev, gru_scores
         final_sev = np.maximum(rule_sev, gru_sev)
 
-    labels     = np.array([int(r["label"])                       for r in rows])
-    timestamps = np.array([int(r["timestamp_ms"])                for r in rows])
+    labels     = np.array([int(r["label"])        for r in rows])
+    timestamps = np.array([int(r["timestamp_ms"]) for r in rows])
     prb_dl_arr = [float(r.get("prb_usage_dl_ratio", 0)) for r in rows]
     prb_ul_arr = [float(r.get("prb_usage_ul_ratio", 0)) for r in rows]
 
@@ -361,24 +379,28 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
         fpr_arr, tpr_arr, _ = roc_curve(y_true, lstm_scores)
         roc_auc = float(auc(fpr_arr, tpr_arr))
 
-    # Detection latency per attack segment
+    # Detection latency — per RNTI, per continuous attack segment.
+    # Segments are found within each UE's own timeline (file order interleaves UEs,
+    # so global segmentation gives meaningless ~0s spans). Mirrors
+    # compute_detection_latency() in evaluate_per_ue_v2.py.
     det_latencies = []
-    i = 0
-    n = len(labels)
-    while i < n:
-        if labels[i] != 0:
-            seg_start = i
-            seg_lbl = labels[i]
-            while i < n and labels[i] == seg_lbl:
-                i += 1
-            # Find first detection after seg_start
-            for j in range(seg_start, min(i + 50, n)):
-                if final_sev[j] >= 1:
-                    lat = (timestamps[j] - timestamps[seg_start]) / 1000.0
-                    det_latencies.append(max(0.0, lat))
-                    break
-        else:
-            i += 1
+    for rnti, idxs in rnti_groups.items():
+        g_lab = [labels[i]     for i in idxs]
+        g_ts  = [timestamps[i] for i in idxs]
+        g_sev = [final_sev[i]  for i in idxs]
+        m = len(idxs); j = 0
+        while j < m:
+            if g_lab[j] != 0:
+                s = j; seg_lbl = g_lab[j]
+                while j < m and g_lab[j] == seg_lbl:
+                    j += 1
+                # first detection within the segment (+ small lookahead)
+                for k in range(s, min(j + 50, m)):
+                    if g_sev[k] >= 1:
+                        det_latencies.append(max(0.0, (g_ts[k] - g_ts[s]) / 1000.0))
+                        break
+            else:
+                j += 1
 
     det_latency_avg = float(np.mean(det_latencies)) if det_latencies else None
 
