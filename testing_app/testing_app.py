@@ -14,10 +14,7 @@ import dash
 from dash import dcc, html, Input, Output, State, ctx, no_update
 import plotly.graph_objs as go
 from datetime import datetime
-from sklearn.metrics import (
-    accuracy_score, precision_score, recall_score, f1_score,
-    roc_curve, auc,
-)
+from sklearn.metrics import roc_curve, auc
 
 # ── Config ────────────────────────────────────────────────────────────────────
 CSV_DIR            = os.getenv("CSV_DIR",            "/data/csv")
@@ -242,12 +239,116 @@ def load_rows(csv_path):
         return list(csv.DictReader(f))
 
 
+# ── Evaluation engine — window-level, mirrors evaluate_per_ue_v2.py ───────────
+
+_VAL_CSV   = "dataset_validation_ue_juni.csv"
+_VAL_CACHE = {}  # cached validation-set detection (mode-independent raw arrays)
+
+
+def _rmean(arr, w=_UE_BURST_WIN):
+    out = np.empty(len(arr), dtype=np.float64)
+    for i in range(len(arr)):
+        out[i] = arr[max(0, i - w + 1):i + 1].mean()
+    return out
+
+
+def _build_feat_group(grp):
+    """19-feature array for one RNTI group, matching add_burst_features_rows():
+    prb_ul_burst uses the CSV's prb_ul_roll_mean (feat idx 8); the other three
+    burst indices use fresh rolling means."""
+    fb = np.array([[float(r.get(c, 0.0)) for c in _UE_CSV_FEATURES] for r in grp],
+                  dtype=np.float32)  # (g, 15)
+    prb_dl_m = _rmean(fb[:, 0]); thp_ul_m = _rmean(fb[:, 3]); thp_dl_m = _rmean(fb[:, 2])
+    burst = np.stack([
+        np.clip(np.log1p(fb[:, 1]) / (fb[:, 8]  + _UE_EPS), 0, _UE_BURST_CLIP),  # CSV roll mean
+        np.clip(np.log1p(fb[:, 0]) / (prb_dl_m  + _UE_EPS), 0, _UE_BURST_CLIP),
+        np.clip(fb[:, 3] / (thp_ul_m + 1.0),                0, _UE_BURST_CLIP),
+        np.clip(fb[:, 2] / (thp_dl_m + 1.0),                0, _UE_BURST_CLIP),
+    ], axis=1).astype(np.float32)
+    return np.concatenate([fb, burst], axis=1)  # (g, 19)
+
+
+def _batch_infer(sess, X, thresh):
+    m = len(X)
+    if m < UE_WINDOW_SIZE:
+        return np.zeros(m, np.float32), np.zeros(m, int)
+    view = np.lib.stride_tricks.sliding_window_view(X, UE_WINDOW_SIZE, axis=0)
+    wins = np.ascontiguousarray(view.transpose(0, 2, 1)).astype(np.float32)
+    sc = sess.run(["mse"], {"input": wins})[0]
+    scores = np.zeros(m, np.float32)
+    scores[UE_WINDOW_SIZE - 1:] = sc
+    return scores, (scores > thresh).astype(int)
+
+
+def _ml_for_mode(mode):
+    """Which ML model a mode uses: 'lstm', 'gru', or None (rule only)."""
+    if mode in ("lstm", "lstm_hybrid"):       return "lstm"
+    if mode in ("gru", "hybrid", "gru_hybrid"): return "gru"
+    return None
+
+
+def _detect_rows(rows, ml):
+    """Per-RNTI detection running rule + the one ML model `ml` needs (None = rule
+    only). A row that is the LAST timestep of a complete seq_len window has
+    is_window=True (matches aligned[SEQ_LEN-1:] in evaluate_per_ue_v2.py)."""
+    rnti_groups = OrderedDict()
+    for idx, r in enumerate(rows):
+        rnti_groups.setdefault(r.get("rnti", "0"), []).append(idx)
+
+    N = len(rows)
+    rule_sev  = np.zeros(N, dtype=int)
+    ml_sev    = np.zeros(N, dtype=int)
+    ml_scores = np.zeros(N, dtype=np.float32)
+    feat_full = np.zeros((N, 19), dtype=np.float32)
+    is_window = np.zeros(N, dtype=bool)
+
+    sess, thresh = ((_LSTM_SESS, LSTM_UE_THRESH) if ml == "lstm"
+                    else (_GRU_SESS, GRU_UE_THRESH) if ml == "gru" else (None, None))
+
+    for rnti, idxs in rnti_groups.items():
+        grp = [rows[i] for i in idxs]
+        ff  = _build_feat_group(grp)
+        idx_arr = np.array(idxs)
+        feat_full[idx_arr] = ff
+        if len(idxs) >= UE_WINDOW_SIZE:
+            is_window[idx_arr[UE_WINDOW_SIZE - 1:]] = True
+        ids = RuleBasedUEIDS()
+        for k, r in enumerate(grp):
+            rule_sev[idxs[k]] = ids.detect(r)
+        if sess is not None:
+            sc, sv = _batch_infer(sess, ff, thresh)
+            ml_scores[idx_arr] = sc; ml_sev[idx_arr] = sv
+
+    return {"rnti_groups": rnti_groups, "is_window": is_window, "feat_full": feat_full,
+            "rule_sev": rule_sev, "ml_sev": ml_sev, "ml_scores": ml_scores}
+
+
+def _final_by_mode(rule_sev, ml_sev, mode):
+    if mode == "rule":                  return rule_sev
+    if mode in ("lstm", "gru"):         return ml_sev
+    return np.maximum(rule_sev, ml_sev)  # lstm_hybrid / hybrid / gru_hybrid
+
+
+def _validation_detection(ml):
+    """Cached window-level detection on the separate benign validation set."""
+    if ml in _VAL_CACHE:
+        return _VAL_CACHE[ml]
+    path = os.path.join(CSV_DIR, _VAL_CSV)
+    d = _detect_rows(load_rows(path), ml) if os.path.exists(path) else None
+    _VAL_CACHE[ml] = d
+    return d
+
+
 def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
     """
     Run detection on the testing dataset.
     attack_filter: "1"-"5" or "all"
     det_mode: "hybrid" | "rule" | "lstm"
     Returns dict with metrics, arrays for plotting.
+
+    Methodology mirrors evaluate_per_ue_v2.py: window-level evaluation (label =
+    last timestep of each seq_len window, per RNTI), recall/precision/F1 on the
+    attack-dataset windows, and FPR on the SEPARATE benign validation set.
     """
     if not csv_path:
         csv_path = find_live_csv()
@@ -273,129 +374,75 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
     # Collect available labels for info display
     available_labels = sorted({int(r["label"]) for r in all_rows})
 
-    # ── Per-RNTI processing ──────────────────────────────────────────────────────
-    # The dataset interleaves multiple UEs row-by-row (rnti 7 attack alternates
-    # with rnti 8 benign every row). Rolling means, ML windows, rule counters and
-    # detection segments MUST be computed on each UE's own timeline — never across
-    # the mixed file order. Mirrors split_by_rnti() in evaluate_per_ue_v2.py.
-    rnti_groups = OrderedDict()
-    for idx, r in enumerate(rows):
-        rnti_groups.setdefault(r.get("rnti", "0"), []).append(idx)
-
-    def _rmean(arr, w=_UE_BURST_WIN):
-        out = np.empty(len(arr), dtype=np.float64)
-        for i in range(len(arr)):
-            out[i] = arr[max(0, i - w + 1):i + 1].mean()
-        return out
-
-    def _batch_infer(sess, X, thresh):
-        m = len(X)
-        if m < UE_WINDOW_SIZE:
-            return np.zeros(m, np.float32), np.zeros(m, int)
-        view = np.lib.stride_tricks.sliding_window_view(X, UE_WINDOW_SIZE, axis=0)
-        wins = np.ascontiguousarray(view.transpose(0, 2, 1)).astype(np.float32)
-        sc = sess.run(["mse"], {"input": wins})[0]
-        scores = np.zeros(m, np.float32)
-        scores[UE_WINDOW_SIZE - 1:] = sc
-        return scores, (scores > thresh).astype(int)
-
-    N = len(rows)
-    rule_sev    = np.zeros(N, dtype=int)
-    lstm_sev    = np.zeros(N, dtype=int);   lstm_scores = np.zeros(N, dtype=np.float32)
-    gru_sev     = np.zeros(N, dtype=int);   gru_scores  = np.zeros(N, dtype=np.float32)
-    feat_full   = np.zeros((N, 19), dtype=np.float32)
-
-    use_lstm = det_mode in ("lstm", "lstm_hybrid")
-    use_gru  = det_mode in ("gru", "hybrid")
-
-    for rnti, idxs in rnti_groups.items():
-        grp = [rows[i] for i in idxs]
-        fb  = np.array([[float(r.get(c, 0.0)) for c in _UE_CSV_FEATURES] for r in grp],
-                       dtype=np.float32)  # (g, 15)
-        prb_ul_m = _rmean(fb[:, 1]); prb_dl_m = _rmean(fb[:, 0])
-        thp_ul_m = _rmean(fb[:, 3]); thp_dl_m = _rmean(fb[:, 2])
-        burst = np.stack([
-            np.clip(np.log1p(fb[:, 1]) / (prb_ul_m + _UE_EPS), 0, _UE_BURST_CLIP),
-            np.clip(np.log1p(fb[:, 0]) / (prb_dl_m + _UE_EPS), 0, _UE_BURST_CLIP),
-            np.clip(fb[:, 3] / (thp_ul_m + 1.0),               0, _UE_BURST_CLIP),
-            np.clip(fb[:, 2] / (thp_dl_m + 1.0),               0, _UE_BURST_CLIP),
-        ], axis=1).astype(np.float32)
-        ff = np.concatenate([fb, burst], axis=1)  # (g, 19)
-        idx_arr = np.array(idxs)
-        feat_full[idx_arr] = ff
-
-        # Rule — fresh per-UE counter state
-        ids = RuleBasedUEIDS()
-        for k, r in enumerate(grp):
-            rule_sev[idxs[k]] = ids.detect(r)
-
-        # ML — windows confined to this UE's timeline
-        if use_lstm:
-            sc, sv = _batch_infer(_LSTM_SESS, ff, LSTM_UE_THRESH)
-            lstm_scores[idx_arr] = sc; lstm_sev[idx_arr] = sv
-        if use_gru:
-            sc, sv = _batch_infer(_GRU_SESS, ff, GRU_UE_THRESH)
-            gru_scores[idx_arr] = sc; gru_sev[idx_arr] = sv
-
-    # ── Combine into active ML + final severity ──────────────────────────────────
-    if det_mode == "rule":
-        final_sev = rule_sev
-    elif det_mode == "lstm":
-        final_sev = lstm_sev
-    elif det_mode == "gru":
-        lstm_sev, lstm_scores = gru_sev, gru_scores
-        final_sev = gru_sev
-    elif det_mode == "lstm_hybrid":
-        final_sev = np.maximum(rule_sev, lstm_sev)
-    else:  # hybrid / gru_hybrid
-        lstm_sev, lstm_scores = gru_sev, gru_scores
-        final_sev = np.maximum(rule_sev, gru_sev)
+    # ── Detection (per RNTI, active model only) ───────────────────────────────────
+    ml = _ml_for_mode(det_mode)
+    d  = _detect_rows(rows, ml)
+    rnti_groups = d["rnti_groups"]; is_window = d["is_window"]; feat_full = d["feat_full"]
+    rule_sev = d["rule_sev"]; ml_sev = d["ml_sev"]; active_scores = d["ml_scores"]
+    final_sev = _final_by_mode(rule_sev, ml_sev, det_mode)
 
     labels     = np.array([int(r["label"])        for r in rows])
     timestamps = np.array([int(r["timestamp_ms"]) for r in rows])
     prb_dl_arr = [float(r.get("prb_usage_dl_ratio", 0)) for r in rows]
     prb_ul_arr = [float(r.get("prb_usage_ul_ratio", 0)) for r in rows]
 
-    y_true = (labels != 0).astype(int)
+    # ── Window-level evaluation mask (drop first seq_len-1 rows per RNTI) ─────────
+    wmask    = is_window
+    w_labels = labels[wmask]
+    w_attack = (w_labels > 0).astype(int)
+
+    # FPR from the SEPARATE benign validation set (STATUS methodology)
+    val_d = _validation_detection(ml)
+    if val_d is not None:
+        vmask   = val_d["is_window"]
+        v_final = _final_by_mode(val_d["rule_sev"], val_d["ml_sev"], det_mode)
+        n_val   = int(vmask.sum())
+        fpr_val = float((v_final[vmask] >= 1).sum()) / n_val if n_val > 0 else 0.0
+        val_scores = val_d["ml_scores"][vmask]
+    else:
+        fpr_val = None; val_scores = None
 
     def metrics(pred):
-        y_pred = (pred >= 1).astype(int)
-        normal = labels == 0
-        fp = (pred[normal] >= 1).sum()
-        fpr = float(fp / normal.sum()) if normal.sum() > 0 else 0.0
-        return {
-            "accuracy":  float(accuracy_score(y_true, y_pred)),
-            "recall":    float(recall_score(y_true, y_pred, zero_division=0)),
-            "precision": float(precision_score(y_true, y_pred, zero_division=0)),
-            "f1":        float(f1_score(y_true, y_pred, zero_division=0)),
-            "fpr":       fpr,
-        }
+        p  = (pred[wmask] >= 1).astype(int)
+        tp = int(((p == 1) & (w_attack == 1)).sum())
+        fp = int(((p == 1) & (w_attack == 0)).sum())
+        tn = int(((p == 0) & (w_attack == 0)).sum())
+        fn = int(((p == 0) & (w_attack == 1)).sum())
+        prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        rec  = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        f1   = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
+        acc  = (tp + tn) / max(1, tp + fp + tn + fn)
+        in_fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
+        return {"accuracy": acc, "recall": rec, "precision": prec, "f1": f1,
+                "fpr": fpr_val if fpr_val is not None else in_fpr}
 
-    # ROC-AUC on LSTM scores (requires both classes present)
-    roc_auc = None  # None = tidak terdefinisi (1 kelas)
+    # ROC-AUC: validation-benign (y=0) vs attack-positive windows (y=1).
+    # Reported only for pure-ML modes (matches STATUS: Hybrid/Rule use binary OR).
+    roc_auc = None
     fpr_arr = tpr_arr = None
-    has_both_classes = y_true.sum() > 0 and y_true.sum() < len(y_true)
-    if has_both_classes:
-        fpr_arr, tpr_arr, _ = roc_curve(y_true, lstm_scores)
-        roc_auc = float(auc(fpr_arr, tpr_arr))
+    if det_mode in ("lstm", "gru") and val_scores is not None:
+        attack_pos = active_scores[wmask][w_attack == 1]
+        if len(attack_pos) > 0 and len(val_scores) > 0:
+            y_roc = np.concatenate([np.zeros(len(val_scores)), np.ones(len(attack_pos))])
+            s_roc = np.concatenate([val_scores, attack_pos])
+            fpr_arr, tpr_arr, _ = roc_curve(y_roc, s_roc)
+            roc_auc = float(auc(fpr_arr, tpr_arr))
 
-    # Detection latency — per RNTI, per continuous attack segment.
-    # Segments are found within each UE's own timeline (file order interleaves UEs,
-    # so global segmentation gives meaningless ~0s spans). Mirrors
-    # compute_detection_latency() in evaluate_per_ue_v2.py.
+    # Detection latency — per RNTI, window-level segments (matches
+    # compute_detection_latency(): aligned arrays start at SEQ_LEN-1).
     det_latencies = []
     for rnti, idxs in rnti_groups.items():
-        g_lab = [labels[i]     for i in idxs]
-        g_ts  = [timestamps[i] for i in idxs]
-        g_sev = [final_sev[i]  for i in idxs]
-        m = len(idxs); j = 0
+        widxs = idxs[UE_WINDOW_SIZE - 1:]          # window rows only
+        g_lab = [labels[i]     for i in widxs]
+        g_ts  = [timestamps[i] for i in widxs]
+        g_sev = [final_sev[i]  for i in widxs]
+        m = len(widxs); j = 0
         while j < m:
             if g_lab[j] != 0:
                 s = j; seg_lbl = g_lab[j]
                 while j < m and g_lab[j] == seg_lbl:
                     j += 1
-                # first detection within the segment (+ small lookahead)
-                for k in range(s, min(j + 50, m)):
+                for k in range(s, j):              # first detection within segment
                     if g_sev[k] >= 1:
                         det_latencies.append(max(0.0, (g_ts[k] - g_ts[s]) / 1000.0))
                         break
@@ -450,20 +497,18 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
         "csv_path":        csv_path,
         "attack_filter":   attack_filter,
         "det_mode":        det_mode,
-        "n_rows":          len(rows),
-        "n_attack":        int(y_true.sum()),
+        "n_rows":          int(wmask.sum()),     # window count (matches STATUS)
+        "n_attack":        int(w_attack.sum()),  # positive windows
         "label_mismatch":  label_mismatch,
         "available_labels": available_labels,
         "label_names":     LABEL_NAMES,
         "is_ue":           True,
         "stage_metrics": {
             "Rule-Based": metrics(rule_sev),
-            "LSTM":        metrics(lstm_sev),
+            "LSTM":        metrics(ml_sev),
             "Hybrid":      metrics(final_sev),
         },
-        "active_metrics": (metrics(rule_sev) if det_mode == "rule"
-                          else metrics(lstm_sev) if det_mode == "lstm"
-                          else metrics(final_sev)),
+        "active_metrics": metrics(final_sev),
         "roc_auc":    roc_auc,
         "fpr_arr":    fpr_arr.tolist() if fpr_arr is not None else None,
         "tpr_arr":    tpr_arr.tolist() if tpr_arr is not None else None,
@@ -477,7 +522,7 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
         "prb_ul":      prb_ul_arr,
         "labels":      labels.tolist(),
         "final_sev":   final_sev.tolist(),
-        "lstm_scores": lstm_scores.tolist(),
+        "lstm_scores": active_scores.tolist(),
     }
 
 
