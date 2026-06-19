@@ -359,20 +359,15 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
     if not all_rows:
         return None
 
-    # Filter rows by attack label
-    label_mismatch = False
-    if attack_filter == "all":
-        rows = all_rows
-    else:
-        lbl = int(attack_filter)
-        rows = [r for r in all_rows if int(r["label"]) == lbl or int(r["label"]) == 0]
-        if not rows:
-            # Label not present in this CSV — fall back to all rows
-            rows = all_rows
-            label_mismatch = True
-
-    # Collect available labels for info display
+    # No row filtering: STATUS computes per-attack metrics one-vs-benign on the
+    # FULL evaluation (FP from benign windows is shared across classes). Filtering
+    # to label-X-or-0 would break RNTI timelines and change the benign population.
+    rows = all_rows
     available_labels = sorted({int(r["label"]) for r in all_rows})
+    target = None if attack_filter == "all" else int(attack_filter)
+    label_mismatch = (target is not None and target not in available_labels)
+    if label_mismatch:
+        target = None  # selected attack absent — fall back to overall
 
     # ── Detection (per RNTI, active model only) ───────────────────────────────────
     ml = _ml_for_mode(det_mode)
@@ -389,9 +384,11 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
     # ── Window-level evaluation mask (drop first seq_len-1 rows per RNTI) ─────────
     wmask    = is_window
     w_labels = labels[wmask]
-    w_attack = (w_labels > 0).astype(int)
+    benign   = (w_labels == 0)
+    # positive class: all attacks ("all") or just the selected class X (one-vs-benign)
+    pos = (w_labels > 0) if target is None else (w_labels == target)
 
-    # FPR from the SEPARATE benign validation set (STATUS methodology)
+    # FPR from the SEPARATE benign validation set (STATUS methodology, mode-level)
     val_d = _validation_detection(ml)
     if val_d is not None:
         vmask   = val_d["is_window"]
@@ -403,11 +400,11 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
         fpr_val = None; val_scores = None
 
     def metrics(pred):
-        p  = (pred[wmask] >= 1).astype(int)
-        tp = int(((p == 1) & (w_attack == 1)).sum())
-        fp = int(((p == 1) & (w_attack == 0)).sum())
-        tn = int(((p == 0) & (w_attack == 0)).sum())
-        fn = int(((p == 0) & (w_attack == 1)).sum())
+        f  = (pred[wmask] >= 1)
+        tp = int((f & pos).sum())
+        fp = int((f & benign).sum())          # FP = benign window fires (shared)
+        tn = int((~f & benign).sum())
+        fn = int((~f & pos).sum())
         prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
         rec  = tp / (tp + fn) if (tp + fn) > 0 else 0.0
         f1   = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
@@ -416,12 +413,12 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
         return {"accuracy": acc, "recall": rec, "precision": prec, "f1": f1,
                 "fpr": fpr_val if fpr_val is not None else in_fpr}
 
-    # ROC-AUC: validation-benign (y=0) vs attack-positive windows (y=1).
+    # ROC-AUC: validation-benign (y=0) vs positive-class windows (y=1).
     # Reported only for pure-ML modes (matches STATUS: Hybrid/Rule use binary OR).
     roc_auc = None
     fpr_arr = tpr_arr = None
     if det_mode in ("lstm", "gru") and val_scores is not None:
-        attack_pos = active_scores[wmask][w_attack == 1]
+        attack_pos = active_scores[wmask][pos]
         if len(attack_pos) > 0 and len(val_scores) > 0:
             y_roc = np.concatenate([np.zeros(len(val_scores)), np.ones(len(attack_pos))])
             s_roc = np.concatenate([val_scores, attack_pos])
@@ -438,7 +435,8 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
         g_sev = [final_sev[i]  for i in widxs]
         m = len(widxs); j = 0
         while j < m:
-            if g_lab[j] != 0:
+            # only segments of the selected class (or any attack when target=None)
+            if g_lab[j] != 0 and (target is None or g_lab[j] == target):
                 s = j; seg_lbl = g_lab[j]
                 while j < m and g_lab[j] == seg_lbl:
                     j += 1
@@ -498,7 +496,7 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
         "attack_filter":   attack_filter,
         "det_mode":        det_mode,
         "n_rows":          int(wmask.sum()),     # window count (matches STATUS)
-        "n_attack":        int(w_attack.sum()),  # positive windows
+        "n_attack":        int(pos.sum()),       # positive windows (selected class)
         "label_mismatch":  label_mismatch,
         "available_labels": available_labels,
         "label_names":     LABEL_NAMES,
