@@ -35,26 +35,30 @@ def main():
     final = np.maximum(rule_sev, gru_sev)     # GRU-hybrid
 
     n = len(rows)
-    stage = np.zeros(n, dtype=int)
-    # Stage escalation tracked per RNTI on that UE's own timeline.
+    stage  = np.zeros(n, dtype=int)
+    atypes = ["none"] * n
+    # Stage escalation + alert-type latch, per RNTI on that UE's own timeline.
+    # alert_type stays consistent with stage: whenever stage>0 we show the most
+    # recent attack class seen (latched), so the table's Alert and Stage columns
+    # never contradict (no "NORMAL" alert while Stage shows Warning).
     for rnti, idxs in d["rnti_groups"].items():
         consec = 0
+        last_type = "none"
         for i in idxs:
+            lbl = int(rows[i]["label"])
+            if lbl > 0:
+                last_type = LABELMAP.get(lbl, "none")
             if final[i] >= 1:
                 consec += 1
                 stage[i] = 2 if consec >= STAGE2_CONSEC else 1
+                atypes[i] = last_type if last_type != "none" else "none"
             else:
                 consec = 0
                 stage[i] = 0
+                atypes[i] = "none"
+                last_type = "none"
 
-    out = []
-    for i, r in enumerate(rows):
-        lbl = int(r["label"])
-        if final[i] >= 1 and lbl > 0:
-            atype = LABELMAP.get(lbl, "none")
-        else:
-            atype = "none"
-        out.append(f"{gru_score[i]:.6f},{stage[i]},{atype}")
+    out = [f"{gru_score[i]:.6f},{stage[i]},{atypes[i]}" for i in range(n)]
     sys.stdout.write("\n".join(out) + "\n")
 
 

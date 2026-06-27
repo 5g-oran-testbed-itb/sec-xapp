@@ -621,7 +621,8 @@ app.layout = html.Div(style={"backgroundColor": BG, "minHeight": "100vh",
             html.Div(style={"display": "flex", "flexDirection": "column", "gap": "8px"}, children=[
                 html.Div("Skenario Serangan:", style={"color": DIM, "fontSize": "11px"}),
                 html.Div(style={"display": "flex", "gap": "8px", "flexWrap": "wrap"}, children=[
-                    html.Button(label, id=btn_id, n_clicks=0, style=_btn_style(color))
+                    html.Button(label, id=btn_id, n_clicks=0,
+                                style=_btn_style(color, selected=(btn_id == "btn-all")))
                     for btn_id, _, label, color in ATTACK_BUTTONS
                 ]),
             ]),
@@ -771,15 +772,16 @@ def handle_csv_source(live_clicks, dropdown_val, _intervals, current_source):
 
 @app.callback(
     Output("active-attack", "data"),
+    *[Output(btn_id, "style") for btn_id, _, _, _ in ATTACK_BUTTONS],
     [Input(btn_id, "n_clicks") for btn_id, _, _, _ in ATTACK_BUTTONS],
     prevent_initial_call=True,
 )
 def store_attack(*_):
     triggered = ctx.triggered_id
-    for btn_id, lbl_key, _, _ in ATTACK_BUTTONS:
-        if triggered == btn_id:
-            return lbl_key
-    return None
+    sel = next((k for bid, k, _, _ in ATTACK_BUTTONS if bid == triggered), "all")
+    styles = [_btn_style(color, selected=(bid == triggered))
+              for bid, _, _, color in ATTACK_BUTTONS]
+    return (sel, *styles)
 
 
 @app.callback(
@@ -989,10 +991,16 @@ def update_dashboard(attack_filter, det_mode, csv_source):
                                       line=dict(color=GOLD, width=2)))
         roc_title = f"ROC Curve — AUC={roc_auc:.3f}"
     else:
-        fig_roc.add_annotation(text="ROC-AUC tidak tersedia<br>(hanya 1 kelas di CSV ini)",
-                               x=0.5, y=0.5, xref="paper", yref="paper",
-                               showarrow=False, font=dict(color=DIM, size=14))
-        roc_title = "ROC Curve — N/A (1 kelas)"
+        if det_mode in ("rule", "lstm_hybrid", "hybrid"):
+            msg = ("ROC-AUC hanya untuk mode ML-only (LSTM/GRU).<br>"
+                   "Rule & Hybrid memakai keputusan biner (Rule ∪ ML),<br>"
+                   "bukan skor kontinu — AUC tidak terdefinisi.")
+            roc_title = "ROC Curve — N/A (mode hibrida / rule)"
+        else:
+            msg = "ROC-AUC tidak tersedia<br>(butuh kelas benign & attack)"
+            roc_title = "ROC Curve — N/A"
+        fig_roc.add_annotation(text=msg, x=0.5, y=0.5, xref="paper", yref="paper",
+                               showarrow=False, font=dict(color=DIM, size=13))
     fig_roc.add_trace(go.Scatter(x=[0, 1], y=[0, 1], name="Random",
                                   line=dict(color="#444", dash="dash", width=1)))
     fig_roc.update_layout(title=roc_title,

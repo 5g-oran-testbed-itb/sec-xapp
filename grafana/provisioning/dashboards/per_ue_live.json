@@ -121,7 +121,7 @@
       },
       "targets": [
         {
-          "expr": "count(xapp_ue_alert_type > 0) or vector(0)",
+          "expr": "count(xapp_ue_stage > 0) or vector(0)",
           "instant": true,
           "legendFormat": ""
         }
@@ -220,7 +220,7 @@
     {
       "id": 11,
       "type": "stat",
-      "title": "Max Alert Severity",
+      "title": "Max Severity",
       "gridPos": {
         "x": 12,
         "y": 0,
@@ -248,7 +248,36 @@
                 "color": "red"
               }
             ]
-          }
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Normal",
+                  "color": "green"
+                }
+              }
+            },
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "Warning",
+                  "color": "orange"
+                }
+              }
+            },
+            {
+              "type": "value",
+              "options": {
+                "2": {
+                  "text": "Critical",
+                  "color": "red"
+                }
+              }
+            }
+          ]
         }
       },
       "options": {
@@ -260,7 +289,7 @@
       },
       "targets": [
         {
-          "expr": "max(xapp_ue_alert_type) or vector(0)",
+          "expr": "max(xapp_ue_stage) or vector(0)",
           "instant": true,
           "legendFormat": ""
         }
@@ -319,7 +348,7 @@
     {
       "id": 13,
       "type": "stat",
-      "title": "Max Stage Aktif",
+      "title": "Critical UEs",
       "gridPos": {
         "x": 20,
         "y": 0,
@@ -359,7 +388,7 @@
       },
       "targets": [
         {
-          "expr": "max(xapp_ue_stage) or vector(0)",
+          "expr": "count(xapp_ue_stage >= 2) or vector(0)",
           "instant": true,
           "legendFormat": ""
         }
@@ -639,37 +668,37 @@
       ],
       "targets": [
         {
-          "expr": "xapp_ue_thp_ul_kbps",
+          "expr": "max by (rnti) (xapp_ue_thp_ul_kbps)",
           "instant": true,
           "refId": "A",
           "format": "table"
         },
         {
-          "expr": "xapp_ue_thp_dl_kbps",
+          "expr": "max by (rnti) (xapp_ue_thp_dl_kbps)",
           "instant": true,
           "refId": "B",
           "format": "table"
         },
         {
-          "expr": "xapp_ue_prb_ul",
+          "expr": "max by (rnti) (xapp_ue_prb_ul)",
           "instant": true,
           "refId": "C",
           "format": "table"
         },
         {
-          "expr": "xapp_ue_prb_dl",
+          "expr": "max by (rnti) (xapp_ue_prb_dl)",
           "instant": true,
           "refId": "D",
           "format": "table"
         },
         {
-          "expr": "xapp_ue_alert_type",
+          "expr": "max by (rnti) (xapp_ue_alert_type)",
           "instant": true,
           "refId": "E",
           "format": "table"
         },
         {
-          "expr": "xapp_ue_stage",
+          "expr": "max by (rnti) (xapp_ue_stage)",
           "instant": true,
           "refId": "F",
           "format": "table"
@@ -785,8 +814,8 @@
           "legendFormat": "MSE {{rnti}}"
         },
         {
-          "expr": "0.025969 + 0 * xapp_ue_mse",
-          "legendFormat": "Threshold GRU-UE v4"
+          "expr": "0.025969 + 0 * count(xapp_ue_mse)",
+          "legendFormat": "Threshold GRU-UE v4 (0.0260)"
         }
       ]
     },
@@ -876,8 +905,38 @@
           "min": -1,
           "color": {
             "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "PRB Direction [-1,+1]"
+          },
+          "max": 1
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/UL Eff.*/"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "UL Efficiency (kbps/PRB)"
+              },
+              {
+                "id": "max",
+                "value": null
+              },
+              {
+                "id": "min",
+                "value": 0
+              }
+            ]
           }
-        }
+        ]
       },
       "options": {
         "tooltip": {
