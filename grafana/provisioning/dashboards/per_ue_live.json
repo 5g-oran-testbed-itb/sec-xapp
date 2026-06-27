@@ -1,10 +1,18 @@
 {
   "uid": "xapp-ue-live",
-  "title": "xApp Security Monitor — Per-UE Live",
-  "tags": ["xapp", "security", "per-ue", "live"],
+  "title": "xApp Security Monitor \u2014 Per-UE Live",
+  "tags": [
+    "xapp",
+    "security",
+    "per-ue",
+    "live"
+  ],
   "timezone": "browser",
   "refresh": "5s",
-  "time": { "from": "now-10m", "to": "now" },
+  "time": {
+    "from": "now-10m",
+    "to": "now"
+  },
   "schemaVersion": 38,
   "templating": {
     "list": [
@@ -12,8 +20,14 @@
         "name": "rnti",
         "label": "RNTI",
         "type": "query",
-        "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "query": { "query": "label_values(xapp_ue_thp_ul_kbps, rnti)", "refId": "StandardVariableQuery" },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(xapp_ue_thp_ul_kbps, rnti)",
+          "refId": "StandardVariableQuery"
+        },
         "multi": true,
         "includeAll": true,
         "current": {},
@@ -24,254 +38,861 @@
   },
   "panels": [
     {
-      "id": 1, "type": "stat", "title": "Active RNTIs",
-      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "id": 1,
+      "type": "stat",
+      "title": "Active RNTIs",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": { "mode": "absolute", "steps": [
-            { "value": null, "color": "green" },
-            { "value": 1,    "color": "blue" }
-          ]}
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "blue"
+              }
+            ]
+          }
         }
       },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
-      "targets": [{ "expr": "count(xapp_ue_thp_ul_kbps > 0) or vector(0)", "instant": true, "legendFormat": "" }]
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "count(xapp_ue_thp_ul_kbps > 0) or vector(0)",
+          "instant": true,
+          "legendFormat": ""
+        }
+      ]
     },
     {
-      "id": 2, "type": "stat", "title": "Alerted RNTIs",
-      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "id": 2,
+      "type": "stat",
+      "title": "Alerted RNTIs",
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": { "mode": "absolute", "steps": [
-            { "value": null, "color": "green" },
-            { "value": 1,    "color": "red" }
-          ]}
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "red"
+              }
+            ]
+          }
         }
       },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
-      "targets": [{ "expr": "count(xapp_ue_alert_type > 0) or vector(0)", "instant": true, "legendFormat": "" }]
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "count(xapp_ue_alert_type > 0) or vector(0)",
+          "instant": true,
+          "legendFormat": ""
+        }
+      ]
     },
     {
-      "id": 3, "type": "stat", "title": "Selected UE Alert Status",
-      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "id": 3,
+      "type": "stat",
+      "title": "Selected UE Alert Status",
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
       "fieldConfig": {
         "defaults": {
           "mappings": [
-            { "type": "value", "options": { "0": { "text": "NORMAL",   "color": "green"  } } },
-            { "type": "value", "options": { "1": { "text": "UL FLOOD", "color": "orange" } } },
-            { "type": "value", "options": { "2": { "text": "DL FLOOD", "color": "orange" } } },
-            { "type": "value", "options": { "3": { "text": "BURST",    "color": "yellow" } } },
-            { "type": "value", "options": { "4": { "text": "RoQ",      "color": "red"    } } }
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "NORMAL",
+                  "color": "green"
+                }
+              }
+            },
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "UL FLOOD",
+                  "color": "orange"
+                }
+              }
+            },
+            {
+              "type": "value",
+              "options": {
+                "2": {
+                  "text": "DL FLOOD",
+                  "color": "orange"
+                }
+              }
+            },
+            {
+              "type": "value",
+              "options": {
+                "3": {
+                  "text": "BURST",
+                  "color": "yellow"
+                }
+              }
+            },
+            {
+              "type": "value",
+              "options": {
+                "4": {
+                  "text": "RoQ",
+                  "color": "red"
+                }
+              }
+            }
           ],
-          "thresholds": { "mode": "absolute", "steps": [
-            { "value": null, "color": "green" },
-            { "value": 1,    "color": "red"   }
-          ]}
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "red"
+              }
+            ]
+          }
         }
       },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "vertical" },
-      "targets": [{ "expr": "xapp_ue_alert_type{rnti=~\"$rnti\"}", "instant": true, "legendFormat": "{{rnti}}" }]
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "vertical"
+      },
+      "targets": [
+        {
+          "expr": "xapp_ue_alert_type{rnti=~\"$rnti\"}",
+          "instant": true,
+          "legendFormat": "{{rnti}}"
+        }
+      ]
     },
     {
-      "id": 11, "type": "stat", "title": "Max Alert Severity",
-      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "id": 11,
+      "type": "stat",
+      "title": "Max Alert Severity",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": { "mode": "absolute", "steps": [
-            { "value": null, "color": "green" },
-            { "value": 1,    "color": "orange" },
-            { "value": 2,    "color": "red" }
-          ]}
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "orange"
+              },
+              {
+                "value": 2,
+                "color": "red"
+              }
+            ]
+          }
         }
       },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
-      "targets": [{ "expr": "max(xapp_ue_alert_type) or vector(0)", "instant": true, "legendFormat": "" }]
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "max(xapp_ue_alert_type) or vector(0)",
+          "instant": true,
+          "legendFormat": ""
+        }
+      ]
     },
     {
-      "id": 12, "type": "stat", "title": "Avg MSE (on alert)",
-      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
+      "id": 12,
+      "type": "stat",
+      "title": "Avg MSE (on alert)",
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
       "fieldConfig": {
         "defaults": {
           "decimals": 4,
-          "color": { "mode": "thresholds" },
-          "thresholds": { "mode": "absolute", "steps": [
-            { "value": null, "color": "green" },
-            { "value": 0.025969, "color": "orange" },
-            { "value": 0.05,     "color": "red" }
-          ]}
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 0.025969,
+                "color": "orange"
+              },
+              {
+                "value": 0.05,
+                "color": "red"
+              }
+            ]
+          }
         }
       },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
-      "targets": [{ "expr": "avg(xapp_ue_mse > 0) or vector(0)", "instant": true, "legendFormat": "" }]
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "avg(xapp_ue_mse > 0) or vector(0)",
+          "instant": true,
+          "legendFormat": ""
+        }
+      ]
     },
     {
-      "id": 13, "type": "stat", "title": "Max Stage Aktif",
-      "gridPos": { "x": 20, "y": 0, "w": 4, "h": 4 },
+      "id": 13,
+      "type": "stat",
+      "title": "Max Stage Aktif",
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": { "mode": "absolute", "steps": [
-            { "value": null, "color": "green" },
-            { "value": 1,    "color": "orange" },
-            { "value": 2,    "color": "red" }
-          ]}
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "orange"
+              },
+              {
+                "value": 2,
+                "color": "red"
+              }
+            ]
+          }
         }
       },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
-      "targets": [{ "expr": "max(xapp_ue_stage) or vector(0)", "instant": true, "legendFormat": "" }]
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "max(xapp_ue_stage) or vector(0)",
+          "instant": true,
+          "legendFormat": ""
+        }
+      ]
     },
     {
-      "id": 14, "type": "table", "title": "UE Aktif — Status Real-Time",
-      "gridPos": { "x": 0, "y": 4, "w": 24, "h": 6 },
+      "id": 14,
+      "type": "table",
+      "title": "UE Aktif \u2014 Status Real-Time",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 6
+      },
       "fieldConfig": {
-        "defaults": { "custom": { "align": "center" } },
+        "defaults": {
+          "custom": {
+            "align": "center"
+          }
+        },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "rnti" },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rnti"
+            },
             "properties": [
-              { "id": "displayName", "value": "RNTI" },
-              { "id": "custom.width", "value": 100 }
+              {
+                "id": "displayName",
+                "value": "RNTI"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
             ]
           },
-          { "matcher": { "id": "byName", "options": "Value #A" },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value #A"
+            },
             "properties": [
-              { "id": "displayName", "value": "THP UL (kbps)" },
-              { "id": "unit", "value": "none" },
-              { "id": "decimals", "value": 0 }
+              {
+                "id": "displayName",
+                "value": "THP UL (kbps)"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
             ]
           },
-          { "matcher": { "id": "byName", "options": "Value #B" },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value #B"
+            },
             "properties": [
-              { "id": "displayName", "value": "THP DL (kbps)" },
-              { "id": "unit", "value": "none" },
-              { "id": "decimals", "value": 0 }
+              {
+                "id": "displayName",
+                "value": "THP DL (kbps)"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
             ]
           },
-          { "matcher": { "id": "byName", "options": "Value #C" },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value #C"
+            },
             "properties": [
-              { "id": "displayName", "value": "PRB UL" },
-              { "id": "unit", "value": "percentunit" },
-              { "id": "decimals", "value": 2 }
+              {
+                "id": "displayName",
+                "value": "PRB UL"
+              },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
             ]
           },
-          { "matcher": { "id": "byName", "options": "Value #D" },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value #D"
+            },
             "properties": [
-              { "id": "displayName", "value": "PRB DL" },
-              { "id": "unit", "value": "percentunit" },
-              { "id": "decimals", "value": 2 }
+              {
+                "id": "displayName",
+                "value": "PRB DL"
+              },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
             ]
           },
-          { "matcher": { "id": "byName", "options": "Value #E" },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value #E"
+            },
             "properties": [
-              { "id": "displayName", "value": "Alert" },
-              { "id": "mappings", "value": [
-                { "type": "value", "options": { "0": { "text": "NORMAL",   "color": "green"  } } },
-                { "type": "value", "options": { "1": { "text": "UL FLOOD", "color": "orange" } } },
-                { "type": "value", "options": { "2": { "text": "DL FLOOD", "color": "orange" } } },
-                { "type": "value", "options": { "3": { "text": "BURST",    "color": "yellow" } } },
-                { "type": "value", "options": { "4": { "text": "RoQ",      "color": "red"    } } }
-              ]},
-              { "id": "custom.displayMode", "value": "color-background" }
+              {
+                "id": "displayName",
+                "value": "Alert"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "NORMAL",
+                        "color": "green"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "UL FLOOD",
+                        "color": "orange"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "2": {
+                        "text": "DL FLOOD",
+                        "color": "orange"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "3": {
+                        "text": "BURST",
+                        "color": "yellow"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "4": {
+                        "text": "RoQ",
+                        "color": "red"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-background"
+              }
             ]
           },
-          { "matcher": { "id": "byName", "options": "Value #F" },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value #F"
+            },
             "properties": [
-              { "id": "displayName", "value": "Stage" },
-              { "id": "thresholds", "value": { "mode": "absolute", "steps": [
-                { "value": null, "color": "green" },
-                { "value": 1,    "color": "orange" },
-                { "value": 2,    "color": "red" }
-              ]}},
-              { "id": "custom.displayMode", "value": "color-background" }
+              {
+                "id": "displayName",
+                "value": "Stage"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "Normal",
+                        "color": "green"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "\u26a0 Alert",
+                        "color": "orange"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "2": {
+                        "text": "\ud83d\udd34 Critical",
+                        "color": "red"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-background"
+              }
             ]
           }
         ]
       },
       "options": {
-        "sortBy": [{ "displayName": "Stage", "desc": true }],
-        "footer": { "show": false }
+        "sortBy": [
+          {
+            "displayName": "Stage",
+            "desc": true
+          }
+        ],
+        "footer": {
+          "show": false
+        }
       },
       "transformations": [
-        { "id": "merge", "options": {} },
-        { "id": "organize", "options": {
-          "excludeByName": { "Time": true },
-          "indexByName": { "rnti": 0, "Value #A": 1, "Value #B": 2, "Value #C": 3, "Value #D": 4, "Value #E": 5, "Value #F": 6 }
-        }}
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "rnti",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true,
+              "Time 4": true,
+              "Time 5": true,
+              "Time 6": true
+            },
+            "indexByName": {
+              "rnti": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #C": 3,
+              "Value #D": 4,
+              "Value #E": 5,
+              "Value #F": 6
+            }
+          }
+        }
       ],
       "targets": [
-        { "expr": "xapp_ue_thp_ul_kbps", "instant": true, "legendFormat": "{{rnti}}", "refId": "A" },
-        { "expr": "xapp_ue_thp_dl_kbps", "instant": true, "legendFormat": "{{rnti}}", "refId": "B" },
-        { "expr": "xapp_ue_prb_ul",       "instant": true, "legendFormat": "{{rnti}}", "refId": "C" },
-        { "expr": "xapp_ue_prb_dl",       "instant": true, "legendFormat": "{{rnti}}", "refId": "D" },
-        { "expr": "xapp_ue_alert_type",   "instant": true, "legendFormat": "{{rnti}}", "refId": "E" },
-        { "expr": "xapp_ue_stage",        "instant": true, "legendFormat": "{{rnti}}", "refId": "F" }
+        {
+          "expr": "xapp_ue_thp_ul_kbps",
+          "instant": true,
+          "refId": "A",
+          "format": "table"
+        },
+        {
+          "expr": "xapp_ue_thp_dl_kbps",
+          "instant": true,
+          "refId": "B",
+          "format": "table"
+        },
+        {
+          "expr": "xapp_ue_prb_ul",
+          "instant": true,
+          "refId": "C",
+          "format": "table"
+        },
+        {
+          "expr": "xapp_ue_prb_dl",
+          "instant": true,
+          "refId": "D",
+          "format": "table"
+        },
+        {
+          "expr": "xapp_ue_alert_type",
+          "instant": true,
+          "refId": "E",
+          "format": "table"
+        },
+        {
+          "expr": "xapp_ue_stage",
+          "instant": true,
+          "refId": "F",
+          "format": "table"
+        }
       ]
     },
     {
-      "id": 5, "type": "timeseries", "title": "Detection Stage per UE",
-      "gridPos": { "x": 0, "y": 14, "w": 12, "h": 6 },
+      "id": 5,
+      "type": "timeseries",
+      "title": "Detection Stage per UE",
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 6
+      },
       "fieldConfig": {
-        "defaults": { "min": 0, "max": 2,
+        "defaults": {
+          "min": 0,
+          "max": 2,
           "mappings": [
-            { "type": "value", "options": { "0": { "text": "Normal"   } } },
-            { "type": "value", "options": { "1": { "text": "Warning"  } } },
-            { "type": "value", "options": { "2": { "text": "Critical" } } }
-          ]
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Normal"
+                }
+              }
+            },
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "Warning"
+                }
+              }
+            },
+            {
+              "type": "value",
+              "options": {
+                "2": {
+                  "text": "Critical"
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "palette-classic"
+          }
         }
       },
-      "options": { "tooltip": { "mode": "multi" } },
-      "targets": [{ "expr": "xapp_ue_stage", "legendFormat": "Stage {{rnti}}" }]
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "xapp_ue_stage",
+          "legendFormat": "Stage {{rnti}}"
+        }
+      ]
     },
     {
-      "id": 6, "type": "timeseries", "title": "MSE Score per UE (on alert events)",
-      "gridPos": { "x": 12, "y": 14, "w": 12, "h": 6 },
+      "id": 6,
+      "type": "timeseries",
+      "title": "MSE Score per UE (on alert events)",
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 12,
+        "h": 6
+      },
       "fieldConfig": {
-        "defaults": { "min": 0 },
+        "defaults": {
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "Threshold GRU-UE v4" },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Threshold GRU-UE v4"
+            },
             "properties": [
-              { "id": "custom.lineStyle", "value": { "fill": "dash" } },
-              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
             ]
           }
         ]
       },
-      "options": { "tooltip": { "mode": "multi" } },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
       "targets": [
-        { "expr": "xapp_ue_mse", "legendFormat": "MSE {{rnti}}" },
-        { "expr": "0.025969 + 0 * xapp_ue_mse", "legendFormat": "Threshold GRU-UE v4" }
+        {
+          "expr": "xapp_ue_mse",
+          "legendFormat": "MSE {{rnti}}"
+        },
+        {
+          "expr": "0.025969 + 0 * xapp_ue_mse",
+          "legendFormat": "Threshold GRU-UE v4"
+        }
       ]
     },
     {
-      "id": 7, "type": "timeseries", "title": "Throughput UL / DL per UE",
-      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 6 },
-      "fieldConfig": { "defaults": { "unit": "kbps", "min": 0 } },
-      "options": { "tooltip": { "mode": "multi" } },
+      "id": 7,
+      "type": "timeseries",
+      "title": "Throughput UL / DL per UE",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kbps",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
       "targets": [
-        { "expr": "xapp_ue_thp_ul_kbps", "legendFormat": "UL {{rnti}}" },
-        { "expr": "xapp_ue_thp_dl_kbps", "legendFormat": "DL {{rnti}}" }
+        {
+          "expr": "xapp_ue_thp_ul_kbps",
+          "legendFormat": "UL {{rnti}}"
+        },
+        {
+          "expr": "xapp_ue_thp_dl_kbps",
+          "legendFormat": "DL {{rnti}}"
+        }
       ]
     },
     {
-      "id": 8, "type": "timeseries", "title": "PRB Utilization per UE",
-      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 6 },
-      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
-      "options": { "tooltip": { "mode": "multi" } },
+      "id": 8,
+      "type": "timeseries",
+      "title": "PRB Utilization per UE",
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
       "targets": [
-        { "expr": "xapp_ue_prb_ul", "legendFormat": "PRB UL {{rnti}}" },
-        { "expr": "xapp_ue_prb_dl", "legendFormat": "PRB DL {{rnti}}" }
+        {
+          "expr": "xapp_ue_prb_ul",
+          "legendFormat": "PRB UL {{rnti}}"
+        },
+        {
+          "expr": "xapp_ue_prb_dl",
+          "legendFormat": "PRB DL {{rnti}}"
+        }
       ]
     },
     {
-      "id": 9, "type": "timeseries", "title": "PRB Direction & UL Efficiency per UE",
-      "gridPos": { "x": 0, "y": 26, "w": 24, "h": 6 },
-      "fieldConfig": { "defaults": { "min": -1 } },
-      "options": { "tooltip": { "mode": "multi" } },
+      "id": 9,
+      "type": "timeseries",
+      "title": "PRB Direction & UL Efficiency per UE",
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 24,
+        "h": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": -1,
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
       "targets": [
-        { "expr": "xapp_ue_prb_direction",  "legendFormat": "PRB Dir {{rnti}}" },
-        { "expr": "xapp_ue_ul_efficiency",  "legendFormat": "UL Eff {{rnti}}" }
+        {
+          "expr": "xapp_ue_prb_direction",
+          "legendFormat": "PRB Dir {{rnti}}"
+        },
+        {
+          "expr": "xapp_ue_ul_efficiency",
+          "legendFormat": "UL Eff {{rnti}}"
+        }
       ]
     }
   ]
