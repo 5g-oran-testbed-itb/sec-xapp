@@ -12,7 +12,7 @@ import time
 import glob
 import logging
 import requests
-from prometheus_client import Gauge, start_http_server
+from prometheus_client import Gauge, Counter, start_http_server
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(message)s")
@@ -65,6 +65,14 @@ g_eval_precision_v2 = Gauge("xapp_eval_precision_v2", "Eval precision v2", ["mod
 g_ue_mse        = Gauge("xapp_ue_mse",        "Per-UE MSE reconstruction error (on alert)", ["rnti"])
 g_ue_alert_type = Gauge("xapp_ue_alert_type", "Per-UE alert type: 0=none 1=ul_flood 2=dl_flood 3=burst 4=roq", ["rnti"])
 g_ue_stage      = Gauge("xapp_ue_stage",      "Per-UE IDS stage: 0/1/2", ["rnti"])
+
+# Cumulative count of attacks escalated to Stage 2 (critical → mitigation triggered).
+c_attacks_blocked = Counter("xapp_attacks_blocked_total",
+                            "Cumulative attacks escalated to Stage 2 (mitigation triggered)",
+                            ["rnti", "attack_type"])
+_ue_prev_stage = {}  # rnti -> last seen stage, to detect 0/1 → 2 transitions
+
+_ATTACK_NAME = {0: "none", 1: "ul_flood", 2: "dl_flood", 3: "burst", 4: "roq"}
 
 g_ue_thp_ul_kbps    = Gauge("xapp_ue_thp_ul_kbps",    "Per-UE UL throughput (kbps)",  ["rnti"])
 g_ue_thp_dl_kbps    = Gauge("xapp_ue_thp_dl_kbps",    "Per-UE DL throughput (kbps)",  ["rnti"])
@@ -507,9 +515,17 @@ def ue_alert_tail_loop():
             for raw in reader:
                 row = parse_ue_alert_row(raw)
                 rnti = row["rnti"]
+                stage = row["rule_stage"]
                 g_ue_mse.labels(rnti=rnti).set(row["mse"])
                 g_ue_alert_type.labels(rnti=rnti).set(row["alert_type"])
-                g_ue_stage.labels(rnti=rnti).set(row["rule_stage"])
+                g_ue_stage.labels(rnti=rnti).set(stage)
+
+                # One "blocked attack" per escalation into Stage 2 (critical →
+                # mitigation). Count only the 0/1 → 2 transition, not every row.
+                if stage >= 2 and _ue_prev_stage.get(rnti, 0) < 2:
+                    atype = _ATTACK_NAME.get(row["alert_type"], "unknown")
+                    c_attacks_blocked.labels(rnti=rnti, attack_type=atype).inc()
+                _ue_prev_stage[rnti] = stage
 
         time.sleep(POLL_INTERVAL)
 
