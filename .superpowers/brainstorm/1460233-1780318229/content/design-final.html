@@ -1,0 +1,101 @@
+<h2>Desain: Panel "PRB + Mitigation Overlay"</h2>
+<p class="subtitle">Mockup posisi dan tampilan panel baru di dashboard Grafana. Apakah ini sudah sesuai?</p>
+
+<div class="mockup">
+  <div class="mockup-header">Dashboard: Security xApp Monitor</div>
+  <div class="mockup-body" style="padding:0; background:#181b1f;">
+
+    <!-- Row 1: Stats (existing) -->
+    <div style="display:flex; gap:6px; padding:8px 8px 0 8px;">
+      <div style="flex:1; background:#1f2329; border-radius:4px; padding:8px; text-align:center;">
+        <div style="color:#aaa; font-size:9px;">DETECTION STATUS</div>
+        <div style="color:#51cf66; font-size:13px; font-weight:bold;">NORMAL</div>
+      </div>
+      <div style="flex:1; background:#1f2329; border-radius:4px; padding:8px; text-align:center;">
+        <div style="color:#aaa; font-size:9px;">PRB DL</div>
+        <div style="color:#7ec8e3; font-size:13px; font-weight:bold;">45%</div>
+      </div>
+      <div style="flex:1; background:#1f2329; border-radius:4px; padding:8px; text-align:center;">
+        <div style="color:#aaa; font-size:9px;">PRB UL</div>
+        <div style="color:#51cf66; font-size:13px; font-weight:bold;">12%</div>
+      </div>
+      <div style="flex:1; background:#1f2329; border-radius:4px; padding:8px; text-align:center;">
+        <div style="color:#aaa; font-size:9px;">CQI</div>
+        <div style="color:#ffd43b; font-size:13px; font-weight:bold;">15</div>
+      </div>
+      <div style="flex:1; background:#1f2329; border-radius:4px; padding:8px; text-align:center;">
+        <div style="color:#aaa; font-size:9px;">UL AIR DELAY</div>
+        <div style="color:#aaa; font-size:13px; font-weight:bold;">40ms</div>
+      </div>
+    </div>
+
+    <!-- Row 2: Existing PRB panel (5 min, unchanged) -->
+    <div style="margin:8px 8px 0 8px; background:#1f2329; border-radius:4px; padding:8px;">
+      <div style="color:#aaa; font-size:9px; margin-bottom:4px;">PRB Utilization DL / UL — Last 5 min <span style="color:#555;">(existing, unchanged)</span></div>
+      <div style="position:relative; height:35px;">
+        <svg width="100%" height="35" viewBox="0 0 400 35" preserveAspectRatio="none">
+          <polyline points="0,25 80,22 160,20 240,18 320,20 400,22" fill="none" stroke="#7ec8e3" stroke-width="1.5"/>
+          <polyline points="0,30 80,29 160,28 240,27 320,29 400,30" fill="none" stroke="#51cf66" stroke-width="1.5"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Row 3: NEW PANEL with shading -->
+    <div style="margin:8px 8px 0 8px; background:#1f2329; border-radius:4px; padding:8px; border:1px solid #4a90d9; position:relative;">
+      <div style="position:absolute; top:-8px; left:8px; background:#4a90d9; color:#fff; font-size:8px; padding:1px 6px; border-radius:3px;">BARU</div>
+      <div style="color:#7ec8e3; font-size:9px; margin-bottom:4px;">PRB DL / UL + Mitigation Stage — Last 10 min</div>
+      <div style="position:relative; height:70px; overflow:hidden;">
+        <!-- Warning zone shading (yellow) -->
+        <div style="position:absolute; left:40%; top:0; width:8%; height:100%; background:rgba(255,200,0,0.12);"></div>
+        <!-- Critical zone shading (red) -->
+        <div style="position:absolute; left:48%; top:0; width:22%; height:100%; background:rgba(220,50,50,0.18);"></div>
+        <svg style="position:absolute; top:0; left:0; width:100%; height:100%;" viewBox="0 0 400 70" preserveAspectRatio="none">
+          <!-- PRB DL - normal then spikes during attack then throttled -->
+          <polyline points="0,60 100,58 160,55 200,52 220,5 240,3 260,4 280,68 300,65 350,60 400,58"
+            fill="none" stroke="#7ec8e3" stroke-width="2"/>
+          <!-- PRB UL -->
+          <polyline points="0,65 100,64 160,63 200,62 220,60 240,58 260,59 280,63 300,64 350,65 400,64"
+            fill="none" stroke="#51cf66" stroke-width="1.5"/>
+        </svg>
+        <!-- Axis labels -->
+        <div style="position:absolute; top:2px; left:2px; font-size:8px; color:#555;">100%</div>
+        <div style="position:absolute; bottom:2px; left:2px; font-size:8px; color:#555;">0%</div>
+        <!-- Stage labels -->
+        <div style="position:absolute; top:3px; left:41%; font-size:7px; color:#ffc107;">▲ WARN</div>
+        <div style="position:absolute; top:3px; left:49%; font-size:7px; color:#ff6b6b;">▲ CRITICAL</div>
+        <div style="position:absolute; top:3px; left:71%; font-size:7px; color:#51cf66;">▲ RESTORE</div>
+      </div>
+      <div style="display:flex; gap:12px; margin-top:4px;">
+        <div style="display:flex; align-items:center; gap:4px; font-size:8px; color:#aaa;"><div style="width:12px; height:2px; background:#7ec8e3;"></div>PRB DL</div>
+        <div style="display:flex; align-items:center; gap:4px; font-size:8px; color:#aaa;"><div style="width:12px; height:2px; background:#51cf66;"></div>PRB UL</div>
+        <div style="display:flex; align-items:center; gap:4px; font-size:8px; color:#aaa;"><div style="width:12px; height:8px; background:rgba(255,200,0,0.3); border-radius:1px;"></div>Warning</div>
+        <div style="display:flex; align-items:center; gap:4px; font-size:8px; color:#aaa;"><div style="width:12px; height:8px; background:rgba(220,50,50,0.35); border-radius:1px;"></div>Critical / Throttle</div>
+      </div>
+    </div>
+
+    <!-- Row 4: LSTM panel (existing, smaller) -->
+    <div style="margin:8px; background:#1f2329; border-radius:4px; padding:8px;">
+      <div style="color:#aaa; font-size:9px; margin-bottom:4px;">LSTM Anomaly Score — <span style="color:#555;">(existing, unchanged)</span></div>
+      <div style="position:relative; height:25px;">
+        <svg width="100%" height="25" viewBox="0 0 400 25" preserveAspectRatio="none">
+          <line x1="0" y1="18" x2="400" y2="18" stroke="#ff6b6b" stroke-width="0.5" stroke-dasharray="4 3"/>
+          <polyline points="0,22 80,21 160,20 220,19 240,5 260,3 280,18 350,21 400,22" fill="none" stroke="#ff9f43" stroke-width="1.5"/>
+        </svg>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="section" style="margin-top:16px;">
+  <h3>Implementasi</h3>
+  <ul>
+    <li><strong>File yang diubah:</strong> <code>grafana/provisioning/dashboards/main.json</code> saja</li>
+    <li><strong>Metric baru:</strong> tidak ada — pakai <code>xapp_detection_stage</code> yang sudah ada</li>
+    <li><strong>Query shading:</strong> <code>xapp_detection_stage / 2</code> → override sebagai fill series (line hidden, fill opacity 20%)</li>
+    <li><strong>Threshold fill:</strong> ≥ 0.4 → kuning, ≥ 0.9 → merah (threshold di Grafana field override)</li>
+    <li><strong>Default time range:</strong> Last 10 minutes (bisa di-zoom)</li>
+  </ul>
+</div>
+
+<p style="margin-top:16px; color:#aaa; font-size:12px;">Apakah desain ini sudah sesuai? Kalau iya, saya akan tulis spec doc dan lanjut ke implementation plan.</p>

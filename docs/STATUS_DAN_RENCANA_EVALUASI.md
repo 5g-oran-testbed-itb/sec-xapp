@@ -1,5 +1,5 @@
 # Status Evaluasi & Rencana Kedepan
-**Terakhir diperbarui:** 2026-06-13 (rev 3 — per-UE model pipeline, inference benchmark)  
+**Terakhir diperbarui:** 2026-06-19 (rev 4 — E2SM-RC mitigasi aktif per-UE, flag `--no-cell`/`--no-csv`, fix crash sync_ui timeout)  
 **Dataset cell-level:** `csv/dataset_attack_mei.csv` — 17.941 baris, 5 label (0=Normal, 1=UL Flood, 2=DL Flood, 3=Burst, 4=RRC Storm)  
 **Dataset per-UE:** `csv/dataset_training_ue_juni.csv` (4.200 baris benign) · `csv/dataset_validation_ue_juni.csv` (1.800 baris benign)
 
@@ -154,51 +154,159 @@
 
 ---
 
-### 1.6 Per-UE Model — GRU-UE v1 & LSTM-UE v1 (Baru, Juni 2026)
+### 1.6 Per-UE Model — Evolusi v1 → v4 (Juni 2026)
 
-**Konteks:** Model terpisah dari cell-level (§1.2–1.5). Dilatih dengan dataset per-UE 15 fitur
-(PRB ratio, throughput, ul_efficiency, rolling stats) menggunakan `RobustScaler` (bukan MinMaxScaler)
-karena distribusi zero-heavy (61% baris prb_ul = 0).
+#### 1.6a Riwayat Evolusi
 
-**Dataset training:** `csv/dataset_training_ue_juni.csv` — 4.200 baris, 70 menit, label=0, interval 1s  
-**Dataset validation:** `csv/dataset_validation_ue_juni.csv` — 1.800 baris, 30 menit, label=0  
-**Feature schema:** `src/detection/feature_schema_ue.py` — 15 fitur (lihat di bawah)  
-**Fix prerequisite:** MAC PRB cache fallback di `xapp_sec_moni.c` — mengatasi NO_MEAS_VALUE untuk
-`RRU.PrbUsedUl/Dl` per-UE di srsRAN KPM FORMAT_3
+| Versi | Masalah | Perbaikan | Recall (hybrid) |
+|-------|---------|-----------|:---------------:|
+| v1 | RobustScaler → threshold 2.8M vs max attack 2.0M | — | **0%** |
+| v3 | Uniform MSE merata noise tinggi (traffic_direction 0.4×) | MinMaxScaler + burst features | 47% RoQ |
+| v3 + weighted scoring | Weighted MSE Scheme A post-hoc | Weights log(max_ratio) per fitur | 79.4% @FPR=3% |
+| **v4 (aktif)** | seq_len=10 (1.2s) terlalu pendek untuk RoQ | seq_len=30 + weighted training loss | **96.1% @FPR=5.1%** |
 
-#### Hasil Training
+#### 1.6b Model Aktif: GRU-UE v4 & LSTM-UE v4
 
-| | GRU-UE v1 | LSTM-UE v1 |
+**Dataset training:** `csv/dataset_training_ue_juni.csv` — 4.200 baris benign, interval 1s  
+**Dataset validation:** `csv/dataset_validation_ue_juni.csv` — 1.800 baris benign  
+**Dataset attack:** `csv/dataset_attack_ue_juni.csv` — 4 kelas serangan per-UE  
+**Feature schema:** `src/detection/feature_schema_ue.py` — **19 fitur** (15 base + 4 burst index)  
+**Scoring:** Weighted MSE Scheme A — `score = Σ(wᵢ × errᵢ) / Σwᵢ`, weights dari `FEATURE_WEIGHTS`
+
+| | GRU-UE v4 | LSTM-UE v4 |
 |-|:---------:|:----------:|
-| File | `models/gru_ue_v1.pt` | `models/lstm_ue_v1.pt` |
+| File | `models/gru_ue_v4.pt` | `models/lstm_ue_v4.pt` |
+| ONNX | `models/gru_ue_v4.onnx` (366 KB) | `models/lstm_ue_v4.onnx` (278 KB) |
 | Arsitektur | BiGRU encoder [64,32] + decoder [32,64] | LSTM (unidirectional) [64,32] |
-| Parameters | 87.870 | 65.373 |
-| File size | 353 KB | 263 KB |
-| seq_len | 10 | 10 |
-| Epochs | 150 (best: ep 136) | 150 (best: ep 77) |
-| val_loss terbaik | 138.001 | 138.008 |
-| Threshold (P99) | 2.793.671 | 2.793.713 |
-| **FPR @P99** | **1.00%** (18/1.792 windows) | **1.00%** (18/1.792 windows) |
-| Scaler | `models/gru_ue_v1_scaler.pkl` | `models/lstm_ue_v1_scaler.pkl` |
+| Scaler | `models/gru_ue_v4_scaler.pkl` (MinMaxScaler) | `models/lstm_ue_v4_scaler.pkl` (MinMaxScaler) |
+| seq_len | 30 | 30 |
+| Threshold (P97 weighted) | **0.025969** | **0.025266** |
+| FPR @P97 | 3.05% | 3.05% |
+| Inference latency (P95) | 0.288 ms | 0.107 ms |
 
-> val_loss dalam skala besar (~138k) karena fitur `ul_efficiency` range [0, 50.000] yang tidak
-> ter-normalisasi sempurna oleh RobustScaler. FPR tetap OK pada 1.00%.
+#### 1.6c Hasil Evaluasi Lengkap (`evaluate_per_ue_v2.py`)
 
-#### Status Evaluasi Per-UE
+> **Dataset:** `csv/dataset_attack_ue_juni.csv` (4 kelas, 2.236 windows positif) + validation 1.772 windows benign  
+> **Threshold:** GRU P97=0.025969 · LSTM P97=0.025266 (recalibrated weighted MSE)  
+> **Catatan latency:** Diukur pada dataset 1s/sampel. Di xApp 120ms/sampel, semua latency ×0.12.
 
-**Yang tersedia:** FPR/TNR dari dataset validasi benign (di atas).
+##### Metrik Keseluruhan
 
-**Yang belum tersedia:** Confusion matrix, recall, precision — memerlukan data serangan
-dalam format per-UE (15 fitur termasuk throughput). Dataset attack yang ada
-(`dataset_testing_v3.csv`, dll.) adalah format cell-level tanpa kolom `thp_dl/ul_kbps`,
-`ul_efficiency`, dsb. Evaluasi parsial (10/15 fitur = 0) tidak valid karena skor rekonstruksi
-menjadi ~31 (sangat rendah) vs threshold 2.793.671 — model menolak hampir semua input parsial
-sebagai "benign", bukan karena model salah tapi karena input tidak valid.
+| Config | Recall | Precision | F1 | FPR | ROC-AUC | TP | FP | TN | FN |
+|--------|:------:|:---------:|:--:|:---:|:-------:|:--:|:--:|:--:|:--:|
+| Rule Only | 85.8% | 97.5% | 91.3% | 2.93% | N/A¹ | 1918 | 49 | 5674 | 318 |
+| LSTM-UE v4 Only | 91.0% | 94.7% | 92.8% | 3.05% | **0.9797** | 2035 | 113 | 5610 | 201 |
+| GRU-UE v4 Only | 89.6% | 94.8% | 92.1% | 3.05% | **0.9807** | 2004 | 111 | 5612 | 232 |
+| LSTM-UE v4 Hybrid | 95.0% | 94.6% | 94.8% | 4.97% | N/A¹ | 2123 | 121 | 5602 | 113 |
+| **GRU-UE v4 Hybrid** | **96.1%** | **94.8%** | **95.4%** | **5.14%** | N/A¹ | **2149** | **119** | **5604** | **87** |
 
-**Untuk evaluasi lengkap:** Perlu rekam skenario serangan (~2 menit per label 1–4) menggunakan
-xApp per-UE yang sudah diperbaiki, kemudian jalankan `python3 evaluate_ue_models.py`.
+¹ *Rule dan Hybrid menggunakan keputusan biner (rule OR ML), bukan skor kontinu → ROC-AUC tidak berlaku sebagai sistem gabungan. Komponen ML-nya identik dengan ML-Only (LSTM=0.9797, GRU=0.9807).*
 
-#### 15 Fitur Per-UE
+##### Per-Attack Recall
+
+| Config | UL Flood | DL Flood | Burst | RoQ |
+|--------|:--------:|:--------:|:-----:|:---:|
+| Rule Only | 97.2% | 96.8% | 95.0% | 65.3% |
+| LSTM-UE v4 Only | 91.8% | 90.9% | 96.8% | 85.0% |
+| GRU-UE v4 Only | 90.6% | 87.6% | 97.7% | 82.2% |
+| LSTM-UE v4 Hybrid | 97.2% | 96.8% | 98.5% | 89.4% |
+| **GRU-UE v4 Hybrid** | **97.9%** | **96.8%** | **98.8%** | **92.2%** |
+
+> Rule lemah di RoQ (65.3%) karena pola sustained moderate-load tidak melampaui threshold individual. ML (seq_len=30) mampu menangkap pola temporal RoQ — GRU Hybrid mendorong RoQ ke **92.2%**.
+
+##### Per-Attack F1 Score
+
+> F1 per kelas dihitung sebagai: Precision\_X = TP\_X / (TP\_X + FP\_benign), Recall\_X = per\_class\_recall.  
+> FP\_benign (false alarm dari windows benign) bersifat shared di semua kelas — formulas one-vs-benign standar IDS.  
+> N kelas (last-timestep label): UL Flood=426 · DL Flood=339 · Burst=725 · RoQ=746.
+
+| Config | UL Flood | DL Flood | Burst | RoQ |
+|--------|:--------:|:--------:|:-----:|:---:|
+| Rule Only | 93.1% | 91.6% | 94.2% | 76.0% |
+| LSTM-UE v4 Only | 84.1% | 81.1% | 91.2% | 84.9% |
+| GRU-UE v4 Only | 83.6% | 79.5% | 91.7% | 83.4% |
+| LSTM-UE v4 Hybrid | 86.2% | 83.3% | 91.5% | 87.0% |
+| **GRU-UE v4 Hybrid** | **86.7%** | **83.5%** | **91.8%** | **88.6%** |
+
+> Per-attack F1 lebih rendah dari overall F1 karena FP\_benign dibagi oleh setiap kelas secara penuh. RoQ paling terpengaruh di Rule Only (F1=76% meski recall=65%) karena presisi Rule tinggi tapi recall rendah; ML membalikkan tradeoff ini (recall 85–92%, F1 84–89%).
+
+##### Inferensi Latency (per jendela, CPU-only)
+
+| Config | Mean (ms) | Median (ms) | P95 (ms) |
+|--------|:---------:|:-----------:|:--------:|
+| Rule Only | — | — | — |
+| LSTM-UE v4 Only | 0.075 | 0.051 | **0.107** |
+| GRU-UE v4 Only | 0.166 | 0.153 | **0.288** |
+| LSTM-UE v4 Hybrid | 0.075 | 0.051 | 0.107 |
+| GRU-UE v4 Hybrid | 0.166 | 0.153 | 0.288 |
+
+##### Deteksi Latency — mean / median (satuan: detik, dataset 1s/sampel)
+
+| Config | UL Flood | DL Flood | Burst | RoQ |
+|--------|:--------:|:--------:|:-----:|:---:|
+| Rule Only | 4.00 / 6.00 | 3.67 / 5.00 | 5.50 / 5.50 | 5.50 / 5.50 |
+| LSTM-UE v4 Only | 9.00 / 7.00 | 10.33 / 15.00 | 11.50 / 11.50 | 18.00 / 18.00 |
+| GRU-UE v4 Only | 7.33 / 3.00 | 14.01 / 21.00 | 8.50 / 8.50 | 12.00 / 12.00 |
+| LSTM-UE v4 Hybrid | 4.00 / 6.00 | 3.67 / 5.00 | 5.50 / 5.50 | 5.50 / 5.50 |
+| **GRU-UE v4 Hybrid** | **3.00 / 3.00** | **3.67 / 5.00** | **4.50 / 4.50** | **5.00 / 5.00** |
+
+##### Mitigasi Latency — mean / median (satuan: detik, det.lat + 0.12s E2SM-RC cycle)
+
+| Config | UL Flood | DL Flood | Burst | RoQ |
+|--------|:--------:|:--------:|:-----:|:---:|
+| Rule Only | 4.12 / 6.12 | 3.79 / 5.12 | 5.62 / 5.62 | 5.62 / 5.62 |
+| LSTM-UE v4 Only | 9.12 / 7.12 | 10.45 / 15.12 | 11.62 / 11.62 | 18.12 / 18.12 |
+| GRU-UE v4 Only | 7.45 / 3.12 | 14.13 / 21.12 | 8.62 / 8.62 | 12.12 / 12.12 |
+| LSTM-UE v4 Hybrid | 4.12 / 6.12 | 3.79 / 5.12 | 5.62 / 5.62 | 5.62 / 5.62 |
+| **GRU-UE v4 Hybrid** | **3.12 / 3.12** | **3.79 / 5.12** | **4.62 / 4.62** | **5.12 / 5.12** |
+
+> **Estimasi di xApp 120ms/sampel (×0.12):**  
+> GRU Hybrid → det.lat: UL Flood ~0.36s, RoQ ~0.60s · mit.lat: UL Flood ~0.37s, RoQ ~0.61s
+
+#### 1.6d Integrasi C xApp (✅ Selesai — Juni 2026)
+
+Perubahan yang dilakukan untuk mengintegrasikan v4 ke `xapp_sec_moni`:
+
+| Komponen | Perubahan |
+|----------|-----------|
+| `sec_ids_ue.h` | `ML_SEQ_LEN` 10→30, `ML_NUM_FEATURES` 15→19, tambah `PRB_UL_ROLL_WIN=10`, `BURST_WIN=10`, tambah burst hist buffers di struct |
+| `sec_ids_ue.c` | `ue_ids_update()`: PRB-UL rolling stats tetap window=10; tambah burst rolling means (prb_dl, thp_ul, thp_dl) + burst index features 15–18 |
+| `xapp_sec_moni.c` | Model path v1→v4 (ONNX + threshold JSON); **wiring per-UE alert → E2SM-RC throttle**; flag baru `--no-cell` & `--no-csv` |
+| `start_xapp_c.sh` | Prompt 3-step: `--mode` + `--ids-mode` + extra flags (`--no-cell`/`--no-csv`) |
+| `start_xapp_c_mitigate.sh` | Default `--ids-mode gru-hybrid` + `--mitigate --no-cell --no-csv` (per-UE only) |
+| `export_onnx_ue.py` | Support MinMaxScaler, SEQ_LEN=30, weighted MSE Scheme A baked-in |
+| `src/xApp/sync_ui.c` (FlexRIC) | Fix crash: RC Control ACK timeout → warning + return graceful (bukan `assert` → SIGABRT) |
+| Rebuild | `cd ~/flexric/build && make -j$(nproc) xapp_sec_moni` ✅ |
+
+**Mitigasi E2SM-RC aktif (per-UE):** Saat per-UE IDS (GRU/LSTM hybrid) mendeteksi serangan,
+`g_pending_throttle` diset → main loop kirim E2SM-RC PRB Throttle (max=5%) ke gNB. srsRAN RC
+Bug #468 sudah di-patch (Mei 2024) sehingga RC Control diterima gNB tanpa crash.
+
+**Cara jalankan per-UE IDS:**
+```bash
+# Live mitigasi — per-UE only, GRU hybrid (rekomendasi):
+./start_xapp_c_mitigate.sh
+#   → --ids-mode gru-hybrid --mitigate --no-cell --no-csv
+
+# Dataset collection — semua aktif (cell + per-UE + CSV):
+./start_xapp_c.sh
+#   → step 3 kosongkan extra flags
+
+# Manual:
+$XAPP_BIN -c my_xapp_kpm.conf --label 0 --mode hybrid --ids-mode gru-hybrid --mitigate --no-cell --no-csv
+```
+
+#### 1.6e Limitasi yang Tersisa
+
+| Limitasi | Detail |
+|----------|--------|
+| Latency dataset 1s | Data dikumpulkan 1s/sample; di deployment 120ms latency ~8× lebih rendah |
+| Alert cooldown 30s | `ALERT_COOLDOWN_MS` per-UE mencegah burst alert tapi bisa miss attack cepat berulang |
+| FPR hybrid 5.14% | Di atas target ideal ≤3%; `--ids-mode gru_only` turun ke 3.05% tapi recall 89.6% |
+| **Restore throttle gated cell-level** | Dengan `--no-cell`, jalur restore PRB di-gate `g_cell_enabled` → throttle tidak auto-restore di mode per-UE only. PRB UE tetap 5% sampai restart. **Belum diperbaiki** — perlu wiring restore ke per-UE alert recency. |
+| Mitigasi cell-wide | E2SM-RC PRB throttle berlaku slice/cell-wide, bukan per-UE individual. Deteksi per-UE presisi, tapi mitigasi memblok semua UE di slice. |
+
+#### 1.6f 19 Fitur Per-UE
 
 | # | Fitur | Sumber |
 |---|-------|--------|
@@ -217,6 +325,13 @@ xApp per-UE yang sudah diperbaiki, kemudian jalankan `python3 evaluate_ue_models
 | 13 | `thp_ul_delta` | thp_ul[t]−thp_ul[t−1] |
 | 14 | `thp_dl_delta` | thp_dl[t]−thp_dl[t−1] |
 | 15 | `traffic_direction` | (thp_ul−thp_dl)/(thp_total+ε), bounded [−1,+1] |
+| 16 | `prb_ul_burst_index` | log(1+prb_ul)/(prb_ul_roll_mean+ε), clip [0,50] |
+| 17 | `prb_dl_burst_index` | log(1+prb_dl)/(prb_dl_roll_mean+ε), clip [0,50] |
+| 18 | `thp_ul_burst_index` | thp_ul/(thp_ul_roll_mean+1), clip [0,50] |
+| 19 | `thp_dl_burst_index` | thp_dl/(thp_dl_roll_mean+1), clip [0,50] |
+
+> Fitur 16–19 (burst index) dihitung real-time di C (`ue_ids_update`) dan di Python
+> (`add_burst_features_rows`). Rolling window burst = 10 sample (konstan, independen dari ML_SEQ_LEN).
 
 ---
 
@@ -352,10 +467,9 @@ budget 1.000ms window KPM.
 | Mode Mitigasi | Mekanisme | Ekspektasi |
 |---------------|-----------|------------|
 | E2SM-RC PRB Throttle | PRB max 5% via E2 | Throughput drop ~95% |
-| iptables DROP | Layer 3 IP blocking | Throughput drop ~100% |
-| Kombinasi | PRB + iptables | Throughput drop ~100% |
+| iptables DROP (legacy) | Layer 3 IP blocking | Throughput drop ~100% |
 
-> Catatan: E2SM-RC PRB throttle saat ini dinonaktifkan karena [srsRAN RC Bug #468](https://github.com/srsran/srsRAN_Project/issues/468). Mitigasi aktif saat ini via iptables Layer 3 saja.
+> **Update:** srsRAN RC Bug #468 telah di-patch (Mei 2024). E2SM-RC PRB throttle kini aktif di `start_xapp_c_mitigate.sh` via flag `--mitigate`. Mitigasi iptables Layer 2 telah dihapus dari script.
 
 ---
 
@@ -477,9 +591,11 @@ torch.save(state, "models/gru_autoencoder_B_v1_tuned.pt")
 | LSTM v22 | `security_model_v22.onnx` | 25 | 0.50 | RRC Storm |
 | GRU-A | `models/gru_autoencoder_A_v1.pt` | 16 | 0.002881 | UL Flood, Burst |
 | GRU-B | `models/gru_autoencoder_B_v1.pt` | 16 | 0.009865 (orig) / **0.003363** (tuned) | RRC Storm, Burst, DL Flood |
-| LSTM C xApp | `security_model.onnx` | 10 | baked-in | Deploy di xapp_sec_moni |
-| **GRU-UE v1** | `models/gru_ue_v1.pt` | **15 per-UE** | 2.793.671 (P99) | Per-UE anomaly, FPR=1.00% |
-| **LSTM-UE v1** | `models/lstm_ue_v1.pt` | **15 per-UE** | 2.793.713 (P99) | Per-UE anomaly, FPR=1.00% |
+| LSTM C xApp | `security_model.onnx` | 10 | baked-in | Deploy di xapp_sec_moni (cell-level) |
+| **GRU-UE v4** ✅ | `models/gru_ue_v4.onnx` | **19 per-UE** | 0.025969 (P97 weighted) | Per-UE deploy aktif, recall 96.1% hybrid |
+| **LSTM-UE v4** ✅ | `models/lstm_ue_v4.onnx` | **19 per-UE** | 0.025266 (P97 weighted) | Per-UE deploy aktif, recall 95.0% hybrid |
+| GRU-UE v1 (legacy) | `models/gru_ue_v1.onnx` | 15 per-UE | 2.793.671 (P99) | Recall 0% — tidak digunakan |
+| LSTM-UE v1 (legacy) | `models/lstm_ue_v1.onnx` | 15 per-UE | 2.793.713 (P99) | Recall 0% — tidak digunakan |
 
 ### Command Evaluasi
 
@@ -545,15 +661,16 @@ python3 evaluate_ue_models.py \
 | DualLSTMDetector 2-of-3 voting + score smoothing | Smoothing perlu ekspansi spike, FPR meningkat | Ganti ke consecutive counter (`_cnt_a/_cnt_b`) |
 | KPM FORMAT_3 NO_MEAS_VALUE untuk RRU.PrbUsedUl/Dl per-UE | prb_ul/dl selalu 0 di dataset per-UE | MAC PRB cache fallback — `g_mac_ul_prb[]`/`g_mac_dl_prb[]` di `xapp_sec_moni.c` |
 | Dataset per-UE prb_usage_dl_ratio & prb_total > 1.0 | Nilai tidak valid, melanggar asumsi normalisasi | Clip in-place: training (10+13 baris), validation (24+31 baris) |
+| xApp crash saat mitigasi E2SM-RC aktif (SIGABRT) | `cond_wait_sync_ui` di FlexRIC `assert(rc != ETIMEDOUT)` saat gNB tidak balas RC Control ACK dalam 5s (gNB sibuk saat serangan) → abort | Patch `src/xApp/sync_ui.c`: timeout → log warning + return graceful, success-path tidak berubah |
 
 ### Limitasi Sistem
 
 | Limitasi | Detail |
 |----------|--------|
 | GRU `empty_ind_rate` zero-range | Feature selalu 0 di training → RRC Storm GRU maksimum ~71.5% (setelah threshold tuning) |
-| E2SM-RC PRB throttle off | srsRAN RC Bug #468 — mitigasi via iptables saja |
-| Restoration manual | Tidak ada auto-cooldown — perlu restart script manual |
-| iptables blunt instrument | Blokir seluruh UE subnet, bukan per-UE |
+| ~~E2SM-RC PRB throttle off~~ | **Resolved** — srsRAN RC Bug #468 di-patch (Mei 2024) + fix crash `sync_ui.c` timeout. E2SM-RC aktif & ter-wire ke deteksi per-UE via `--mitigate`. Latency E2SM-RC ~120ms (perlu diukur di live demo COTS). |
+| Auto-restore gated `--no-cell` | Di mode per-UE only, throttle tidak auto-restore (jalur restore di-gate `g_cell_enabled`). Workaround: jalankan tanpa `--no-cell`, atau restart. |
+| Mitigasi cell-wide | E2SM-RC throttle slice-level — blok semua UE di slice, bukan per-UE individual |
 | LSTM FPR tinggi (6.27%) | Heavy-tailed normal distribution — perlu retraining dengan regularization untuk perbaikan signifikan |
 | Per-UE confusion matrix belum tersedia | Tidak ada dataset serangan per-UE format (15 fitur); evaluasi parsial tidak valid — 10/15 fitur = 0 menyebabkan skor ~31 vs threshold 2,8M |
 | CPU xApp C belum diukur | Benchmark hanya PyTorch Python standalone; `pidstat` di RIC saat xApp running belum dilakukan (SSH key belum dikonfigurasi) |

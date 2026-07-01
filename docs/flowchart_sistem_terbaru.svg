@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="1380" viewBox="0 0 540 1380" font-family="Arial, sans-serif" font-size="12">
+
+  <!-- Background -->
+  <rect width="540" height="1380" fill="#f8f9fa"/>
+
+  <!-- Title -->
+  <text x="270" y="28" text-anchor="middle" font-size="14" font-weight="bold" fill="#1a1a2e">Flowchart Integrasi Sistem xApp IDS (C Native)</text>
+  <text x="270" y="44" text-anchor="middle" font-size="10" fill="#666">Tanpa Python Streamer — E2AP/KPM Langsung ke FlexRIC</text>
+
+  <!-- ─── SHAPES ─── -->
+
+  <!-- 1. START oval -->
+  <ellipse cx="270" cy="85" rx="60" ry="22" fill="#4e73df" stroke="#2e59d9" stroke-width="1.5"/>
+  <text x="270" y="90" text-anchor="middle" fill="white" font-weight="bold">Mulai</text>
+
+  <!-- arrow -->
+  <line x1="270" y1="107" x2="270" y2="133" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 2. Init ONNX -->
+  <rect x="130" y="133" width="280" height="50" rx="6" fill="#fff" stroke="#4e73df" stroke-width="1.5"/>
+  <text x="270" y="153" text-anchor="middle" font-weight="bold" fill="#1a1a2e">Inisialisasi xApp C</text>
+  <text x="270" y="168" text-anchor="middle" fill="#555">Load ONNX (v16+v22) + Scaler</text>
+  <text x="270" y="181" text-anchor="middle" fill="#888" font-size="10">security_model_v16.onnx · security_model_v22.onnx</text>
+
+  <!-- arrow -->
+  <line x1="270" y1="183" x2="270" y2="209" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 3. Connect RIC decision -->
+  <polygon points="270,209 400,244 270,279 140,244" fill="#ffc107" stroke="#e0a800" stroke-width="1.5"/>
+  <text x="270" y="240" text-anchor="middle" font-weight="bold" fill="#1a1a2e">Koneksi ke</text>
+  <text x="270" y="255" text-anchor="middle" font-weight="bold" fill="#1a1a2e">FlexRIC RIC (E42)?</text>
+
+  <!-- No branch: left -->
+  <line x1="140" y1="244" x2="60" y2="244" stroke="#e74a3b" stroke-width="1.5" marker-end="url(#arrerr)"/>
+  <text x="95" y="238" text-anchor="middle" fill="#e74a3b" font-size="11">Tidak</text>
+  <line x1="60" y1="244" x2="60" y2="209" stroke="#e74a3b" stroke-width="1.5"/>
+  <line x1="60" y1="209" x2="130" y2="209" stroke="#e74a3b" stroke-width="1.5" marker-end="url(#arrerr)"/>
+  <text x="60" y="195" text-anchor="middle" fill="#e74a3b" font-size="10">Retry</text>
+
+  <!-- Yes arrow -->
+  <line x1="270" y1="279" x2="270" y2="305" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="283" y="297" fill="#28a745" font-size="11">Ya</text>
+
+  <!-- 4. KPM Subscribe -->
+  <rect x="110" y="305" width="320" height="55" rx="6" fill="#fff" stroke="#4e73df" stroke-width="1.5"/>
+  <text x="270" y="325" text-anchor="middle" font-weight="bold" fill="#1a1a2e">Kirim KPM Subscription</text>
+  <text x="270" y="341" text-anchor="middle" fill="#555">FORMAT 1 (cell-level) + FORMAT 3 (per-UE)</text>
+  <text x="270" y="355" text-anchor="middle" fill="#888" font-size="10">Period: 1000ms · ngran_gNB_DU · E42:36422</text>
+
+  <!-- arrow -->
+  <line x1="270" y1="360" x2="270" y2="386" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 5. Receive Indication -->
+  <rect x="110" y="386" width="320" height="55" rx="6" fill="#e8f4fd" stroke="#4e73df" stroke-width="1.5"/>
+  <text x="270" y="406" text-anchor="middle" font-weight="bold" fill="#1a1a2e">Terima KPM Indication</text>
+  <text x="270" y="422" text-anchor="middle" fill="#555">sm_cb_kpm callback (E2AP)</text>
+  <text x="270" y="436" text-anchor="middle" fill="#888" font-size="10">~1000ms interval · srsRAN gNB → FlexRIC → xApp</text>
+
+  <!-- arrow -->
+  <line x1="270" y1="441" x2="270" y2="467" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 6. Hot Label -->
+  <rect x="110" y="467" width="320" height="45" rx="6" fill="#fff8e1" stroke="#ffc107" stroke-width="1.5"/>
+  <text x="270" y="487" text-anchor="middle" font-weight="bold" fill="#1a1a2e">Baca Label Hot-Swap</text>
+  <text x="270" y="502" text-anchor="middle" fill="#555">/tmp/xapp_label → g_label, scenario, attacker</text>
+
+  <!-- arrow -->
+  <line x1="270" y1="512" x2="270" y2="538" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 7. Feature Extraction -->
+  <rect x="80" y="538" width="380" height="75" rx="6" fill="#fff" stroke="#4e73df" stroke-width="1.5"/>
+  <text x="270" y="558" text-anchor="middle" font-weight="bold" fill="#1a1a2e">Ekstraksi Metrik &amp; Feature Engineering</text>
+  <text x="270" y="573" text-anchor="middle" fill="#555">PRB DL/UL ratio · direction · delta · burst_index</text>
+  <text x="270" y="587" text-anchor="middle" fill="#555">CQI · RACH preamble · empty_ind_rate</text>
+  <text x="270" y="601" text-anchor="middle" fill="#888" font-size="10">Rolling stats: mean/std/max (W10, W30, W100) → 25 fitur total</text>
+
+  <!-- arrow -->
+  <line x1="270" y1="613" x2="270" y2="639" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 8. ONNX LSTM Inference -->
+  <rect x="80" y="639" width="380" height="60" rx="6" fill="#e8f8f0" stroke="#1cc88a" stroke-width="1.5"/>
+  <text x="270" y="659" text-anchor="middle" font-weight="bold" fill="#1a1a2e">ONNX LSTM Inference (Dual Ensemble)</text>
+  <text x="270" y="674" text-anchor="middle" fill="#555">Sliding window seq_len=10 · 25 fitur</text>
+  <text x="270" y="688" text-anchor="middle" fill="#888" font-size="10">v16 thresh=0.21 (UL/DL Flood) · v22 thresh=0.50 (RRC Storm)</text>
+
+  <!-- arrow -->
+  <line x1="270" y1="699" x2="270" y2="725" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 9. Rule-Based Detection -->
+  <rect x="80" y="725" width="380" height="60" rx="6" fill="#fef3e2" stroke="#f6c23e" stroke-width="1.5"/>
+  <text x="270" y="745" text-anchor="middle" font-weight="bold" fill="#1a1a2e">Rule-Based Detection (Paralel)</text>
+  <text x="270" y="760" text-anchor="middle" fill="#555">R1: PRB_UL&gt;70% · R2: PRB_DL&gt;70% · R3: Burst spike</text>
+  <text x="270" y="774" text-anchor="middle" fill="#888" font-size="10">R4: empty_ind_rate ≥2/window (RRC Storm proxy)</text>
+
+  <!-- arrow -->
+  <line x1="270" y1="785" x2="270" y2="811" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 10. Stage 1 decision -->
+  <polygon points="270,811 430,851 270,891 110,851" fill="#ffc107" stroke="#e0a800" stroke-width="1.5"/>
+  <text x="270" y="843" text-anchor="middle" font-weight="bold" fill="#1a1a2e">Stage 1 Alert?</text>
+  <text x="270" y="860" text-anchor="middle" fill="#333" font-size="11">LSTM anomaly ≥3× berturut ATAU</text>
+  <text x="270" y="874" text-anchor="middle" fill="#333" font-size="11">Rule threshold terlampaui</text>
+
+  <!-- No → right (back to top of loop) -->
+  <line x1="430" y1="851" x2="490" y2="851" stroke="#28a745" stroke-width="1.5"/>
+  <text x="462" y="845" fill="#28a745" font-size="11">Tidak</text>
+  <line x1="490" y1="851" x2="490" y2="413" stroke="#28a745" stroke-width="1.5"/>
+  <line x1="490" y1="413" x2="430" y2="413" stroke="#28a745" stroke-width="1.5" marker-end="url(#arrok)"/>
+  <text x="505" y="640" text-anchor="middle" fill="#28a745" font-size="10" transform="rotate(90,505,640)">Tunggu KPM berikutnya</text>
+
+  <!-- Yes → down -->
+  <line x1="270" y1="891" x2="270" y2="917" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="283" y="910" fill="#e74a3b" font-size="11">Ya</text>
+
+  <!-- 11. Log Stage 1 -->
+  <rect x="110" y="917" width="320" height="45" rx="6" fill="#fde8e8" stroke="#e74a3b" stroke-width="1.5"/>
+  <text x="270" y="937" text-anchor="middle" font-weight="bold" fill="#c0392b">Catat Stage 1 Alert</text>
+  <text x="270" y="952" text-anchor="middle" fill="#555">Log alert_type · anomaly_score · severity=1</text>
+
+  <!-- arrow -->
+  <line x1="270" y1="962" x2="270" y2="988" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 12. Stage 2 decision -->
+  <polygon points="270,988 420,1023 270,1058 120,1023" fill="#ffc107" stroke="#e0a800" stroke-width="1.5"/>
+  <text x="270" y="1015" text-anchor="middle" font-weight="bold" fill="#1a1a2e">Stage 2?</text>
+  <text x="270" y="1030" text-anchor="middle" fill="#333" font-size="11">5s consecutive Stage1</text>
+  <text x="270" y="1044" text-anchor="middle" fill="#333" font-size="11">(LSTM_STAGE2_MS = 5000ms)</text>
+
+  <!-- No: not yet confirmed -->
+  <line x1="120" y1="1023" x2="60" y2="1023" stroke="#aaa" stroke-width="1.5"/>
+  <text x="85" y="1017" text-anchor="middle" fill="#888" font-size="11">Belum</text>
+  <line x1="60" y1="1023" x2="60" y2="967" stroke="#aaa" stroke-width="1.5"/>
+  <line x1="60" y1="967" x2="110" y2="967" stroke="#aaa" stroke-width="1.5" marker-end="url(#arrgray)"/>
+
+  <!-- Yes arrow -->
+  <line x1="270" y1="1058" x2="270" y2="1084" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="283" y="1077" fill="#e74a3b" font-size="11">Ya</text>
+
+  <!-- 13. Mitigate decision -->
+  <polygon points="270,1084 410,1114 270,1144 130,1114" fill="#ffc107" stroke="#e0a800" stroke-width="1.5"/>
+  <text x="270" y="1106" text-anchor="middle" font-weight="bold" fill="#1a1a2e">--mitigate</text>
+  <text x="270" y="1122" text-anchor="middle" font-weight="bold" fill="#1a1a2e">enabled?</text>
+
+  <!-- Yes → Mitigate -->
+  <line x1="270" y1="1144" x2="270" y2="1170" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="283" y="1163" fill="#e74a3b" font-size="11">Ya</text>
+
+  <!-- No → CSV Write (right branch) -->
+  <line x1="410" y1="1114" x2="480" y2="1114" stroke="#aaa" stroke-width="1.5"/>
+  <text x="446" y="1108" text-anchor="middle" fill="#888" font-size="11">Tidak</text>
+  <line x1="480" y1="1114" x2="480" y2="1220" stroke="#aaa" stroke-width="1.5"/>
+  <line x1="480" y1="1220" x2="430" y2="1220" stroke="#aaa" stroke-width="1.5" marker-end="url(#arrgray)"/>
+
+  <!-- 14. Mitigasi box -->
+  <rect x="100" y="1170" width="340" height="55" rx="6" fill="#fde8e8" stroke="#e74a3b" stroke-width="1.5"/>
+  <text x="270" y="1190" text-anchor="middle" font-weight="bold" fill="#c0392b">Eksekusi Mitigasi E2SM-RC</text>
+  <text x="270" y="1205" text-anchor="middle" fill="#555">PRB quota throttle → max 5%</text>
+  <text x="270" y="1218" text-anchor="middle" fill="#888" font-size="10">Auto-restore 10s setelah severity=0 · cooldown 30s</text>
+
+  <!-- arrow to CSV -->
+  <line x1="270" y1="1225" x2="270" y2="1248" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 15. CSV Write -->
+  <rect x="100" y="1248" width="340" height="55" rx="6" fill="#fff" stroke="#4e73df" stroke-width="1.5"/>
+  <text x="270" y="1268" text-anchor="middle" font-weight="bold" fill="#1a1a2e">Catat CSV Training/Evaluasi</text>
+  <text x="270" y="1283" text-anchor="middle" fill="#555">25 fitur · label · anomaly_score</text>
+  <text x="270" y="1296" text-anchor="middle" fill="#888" font-size="10">stage1_alert · stage2_confirmed · alert_type · timestamp</text>
+
+  <!-- arrow to loop -->
+  <line x1="270" y1="1303" x2="270" y2="1325" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 16. END oval -->
+  <ellipse cx="270" cy="1350" rx="90" ry="22" fill="#4e73df" stroke="#2e59d9" stroke-width="1.5"/>
+  <text x="270" y="1355" text-anchor="middle" fill="white" font-weight="bold">Loop → KPM berikutnya</text>
+
+  <!-- Loop back arrow (from end to step 5) -->
+  <!-- We draw a right-side return arrow -->
+  <line x1="360" y1="1350" x2="520" y2="1350" stroke="#4e73df" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <line x1="520" y1="1350" x2="520" y2="413" stroke="#4e73df" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <line x1="520" y1="413" x2="430" y2="413" stroke="#4e73df" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrblue)"/>
+
+  <!-- ─── ARROWHEAD MARKERS ─── -->
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#555"/>
+    </marker>
+    <marker id="arrerr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#e74a3b"/>
+    </marker>
+    <marker id="arrok" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#28a745"/>
+    </marker>
+    <marker id="arrgray" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#aaa"/>
+    </marker>
+    <marker id="arrblue" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#4e73df"/>
+    </marker>
+  </defs>
+
+  <!-- ─── LEGEND ─── -->
+  <rect x="10" y="1080" width="95" height="100" rx="4" fill="white" stroke="#ccc" stroke-width="1"/>
+  <text x="57" y="1093" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">Legenda</text>
+  <rect x="15" y="1098" width="14" height="10" fill="#fff" stroke="#4e73df" stroke-width="1.5"/>
+  <text x="32" y="1108" font-size="9" fill="#333">Proses</text>
+  <polygon points="57,1118 75,1128 57,1138 39,1128" fill="#ffc107" stroke="#e0a800" stroke-width="1"/>
+  <text x="32" y="1150" font-size="9" fill="#333">Keputusan</text>
+  <ellipse cx="22" cy="1162" rx="10" ry="7" fill="#4e73df"/>
+  <text x="35" y="1165" font-size="9" fill="#333">Mulai/Akhir</text>
+  <rect x="15" y="1170" width="14" height="10" fill="#fde8e8" stroke="#e74a3b" stroke-width="1.5"/>
+  <text x="32" y="1180" font-size="9" fill="#333">Alert/Mitigasi</text>
+
+</svg>

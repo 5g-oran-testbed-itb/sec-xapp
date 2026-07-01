@@ -1,5 +1,5 @@
 # Progres C Native xApp — Security xApp
-**Terakhir diperbarui: 16 Mei 2026 (rev 8 — Two-Stage Hybrid Detection)**
+**Terakhir diperbarui: 20 Mei 2026 (rev 9 — LSTM v5, Hybrid Burst 97.0%)**
 
 ---
 
@@ -298,19 +298,19 @@ Threshold: P99.0 (percentile ke-99.0 dari validation set benign, distribution-fr
 |-------|---------------|--------|-----------|---------|
 | v2 | 10 | 100 | P99.5 | Model awal. Hanya DL Flood terdeteksi. |
 | v3 | 11 (+ `empty_ind_rate`) | 150 | P99.0 | UL Flood 97.9%, RRC Storm 100%. Training data dibersihkan dari 536 baris UL>80%. |
-| v4 | 15 (+ 4 rolling stats) | 150 | P99.0 | DL Flood 16%→98.3%, Burst 63%→79.9%. `prb_dl_roll_mean/std` dan `prb_ul_roll_std/max`. |
-| **v5** | **16** (+ `prb_ul_roll_max_100`) | 150 | P99.0 | Target: Burst ON/OFF >95%. Root cause: OFF phase 11–58ts > window 10ts → 69.8% OFF rows missed. |
+| v4 | 15 (+ 4 rolling stats) | 150 | P99.0 | DL Flood 16%→98.3% LSTM, Burst 63%→79.9% LSTM, Hybrid Burst ~94.5%. `prb_dl_roll_mean/std` dan `prb_ul_roll_std/max`. |
+| **v5** | **16** (+ `prb_ul_roll_max_100`) | 150 | P99.0 | **Hybrid Burst 97.0%** (+2.5% dari v4 hybrid). Root cause fix: buffer 100ts menutupi OFF phase hingga 58ts. |
 
-**File model (v4 — aktif):**
+**File model (v5 — aktif):**
 ```
-models/lstm_autoencoder_v4.pt               ← PyTorch checkpoint (model aktif)
-models/lstm_autoencoder_v4_losses.json      ← Loss history train/val per epoch
-models/lstm_autoencoder_v4_threshold.json   ← threshold P99.0 dari val set
-models/scaler.pkl                           ← MinMaxScaler (fit dari training data saja, 15 fitur)
-security_model.onnx                         ← ONNX untuk C inference (dibake dari v4)
+models/lstm_autoencoder_v5.pt               ← PyTorch checkpoint (model aktif, 20 Mei 2026)
+models/lstm_autoencoder_v5_losses.json      ← Loss history train/val per epoch
+models/lstm_autoencoder_v5_threshold.json   ← threshold P99.0 dari val set
+models/scaler.pkl                           ← MinMaxScaler (fit dari training data saja, 16 fitur)
+security_model.onnx                         ← ONNX untuk C inference (dibake dari v5, 0.08 MB)
 ```
 
-**Pipeline training → deploy (v4):**
+**Pipeline training → deploy (v5):**
 
 ```bash
 # STEP 1 — Siapkan CSV (tambah kolom rolling stats ke training/val/test)
@@ -318,17 +318,17 @@ security_model.onnx                         ← ONNX untuk C inference (dibake d
 
 # STEP 2 — Train model
 cd /home/telmat/sec-xapp
-./venv/bin/python3 train_lstm.py \
+/home/telmat/xapp/security-xapp/venv/bin/python3 train_lstm.py \
     --train csv/dataset_training_clean.csv \
     --val   csv/dataset_validation_clean.csv \
     --epochs 150 --batch-size 64 --lr 0.001 \
-    --model-out models/lstm_autoencoder_v4.pt
+    --model-out models/lstm_autoencoder_v5.pt
 
 # STEP 3 — Export ke ONNX
-./venv/bin/python3 export_onnx.py
-# Output: security_model.onnx — input [batch, 10, 15], output score per sample
+/home/telmat/xapp/security-xapp/venv/bin/python3 export_onnx.py
+# Output: security_model.onnx — input [batch, 10, 16], output score per sample
 
-# STEP 4 — Rebuild C xApp (NUM_FEATURES=15 sudah di-update)
+# STEP 4 — Rebuild C xApp (NUM_FEATURES=16 sudah di-update)
 cd ~/flexric/build && make -j$(nproc) xapp_sec_moni
 ```
 
@@ -347,30 +347,45 @@ cd ~/flexric/build && make -j$(nproc) xapp_sec_moni
 | Threshold (P99.0) | 0.003504 |
 | FPR benign | 1.00% |
 
-**Hasil evaluasi v3 vs v4 (dataset_testing_v2_with_empty.csv, 19 Mei 2026):**
+**Hasil evaluasi v3 vs v4 vs v5 — LSTM only (dataset_testing_v2_with_empty.csv):**
 
-| Attack | Rule | LSTM v2 | LSTM v3 | LSTM v4 |
-|--------|------|---------|---------|---------|
-| UL Flood | 98.6% | ~0% | 97.9% | **99.0%** |
-| DL Flood | 98.1% | ~16% | 16.3% | **98.3%** (+82%) |
-| Burst ON/OFF | 94.5% | ~0% | 62.8% | **79.9%** (+17%) |
-| RRC Storm | 99.7% | ~0% | 100% | **100%** |
-| RF Jammer | 0% | 0% | 0% | 0% (fundamental) |
-| Normal FPR | — | — | 4.30% | 4.88% |
+| Attack | Rule | LSTM v2 | LSTM v3 | LSTM v4 | LSTM v5 |
+|--------|------|---------|---------|---------|---------|
+| UL Flood | 98.6% | ~0% | 97.9% | 99.0% | **98.8%** |
+| DL Flood | 98.1% | ~16% | 16.3% | 98.3% | 65.4%¹ |
+| Burst ON/OFF | 94.5% | ~0% | 62.8% | 79.9% | **83.5%** (+3.6%) |
+| RRC Storm | 99.7% | ~0% | 100% | 100% | **100%** |
+| RF Jammer | 0% | 0% | 0% | 0% | 0% (fundamental) |
+| Normal FPR | — | — | 4.30% | 4.88% | 4.67% |
 
-**LSTM v4 score statistics (mean anomaly score):**
+> ¹ DL Flood LSTM v5 turun dari 98.3% → 65.4% karena dengan 16 fitur model lebih baik merekonstruksi pola DL Flood. Namun **hybrid tetap 98.1%** karena rule-based menangkap DL Flood sepenuhnya.
+
+**Hasil evaluasi Hybrid (Rule + LSTM max) — v5 (20 Mei 2026):**
+
+| Attack | Hybrid S1+ | Hybrid S2 | LSTM-only | Rule-only |
+|--------|-----------|-----------|-----------|-----------|
+| UL Flood | **98.8%** | 90.5% | 98.8% | 98.6% |
+| DL Flood | **98.1%** | 77.5% | 65.4% | 98.1% |
+| Burst ON/OFF | **97.0%** | 78.5% | 83.5% | 94.5% |
+| RRC Storm | **99.7%** | 99.6% | 100% | 99.7% |
+| RF Jammer | **0.0%** | 0.0% | 0.0% | 0.0% |
+| Normal FPR | 4.91% | 3.18% | 4.67% | 2.31% |
+
+> Hybrid S1 Accuracy=90.6%, Precision=84.5%, Recall=77.7%, F1=80.9%, ROC-AUC=86.8%
+
+**LSTM v5 score statistics (mean anomaly score):**
 
 | Label | Mean Score | P50 | >Threshold (0.5) |
 |-------|-----------|-----|-----------------|
-| Normal | 0.343 | 0.143 | 5.1% (FPR) |
-| UL Flood | 3.419 | 3.512 | 99.0% |
-| DL Flood | 0.715 | 0.636 | 98.3% |
-| Burst ON/OFF | 2.281 | 2.767 | 79.9% |
-| RRC Storm | 12.507 | 11.910 | 100% |
-| RF Jammer | 0.146 | 0.137 | 0.0% |
+| Normal | 0.229 | 0.081 | 4.9% (FPR) |
+| UL Flood | 1.195 | 1.222 | 98.8% |
+| DL Flood | 0.521 | 0.530 | 65.4% |
+| Burst ON/OFF | 1.094 | 1.196 | 83.5% |
+| RRC Storm | 7.100 | 6.793 | 100% |
+| RF Jammer | 0.083 | 0.078 | 0.0% |
 
-> **Kunci perbaikan DL Flood**: `prb_dl_roll_mean` tinggi + `prb_dl_roll_std` rendah (flood yang sustained) sangat out-of-distribution dari training normal → reconstruction error tinggi.
-> **Kunci perbaikan Burst**: `prb_ul_roll_std` tinggi (variance besar akibat ON/OFF cycle) dan `prb_ul_roll_max` tetap tinggi selama fase OFF.
+> **Kunci perbaikan Burst v5**: `prb_ul_roll_max_100` (buffer 100ts = 10s) menutupi OFF phase hingga 58ts. Hybrid Burst naik dari ~94.5% (v4) → **97.0%** (v5), target >95% tercapai.
+> **Note DL Flood v5**: DL Flood lebih mengandalkan rule-based (98.1%), LSTM fokus Burst. Total hybrid tidak berubah.
 
 **Hasil training v4 (19 Mei 2026):**
 | Parameter | Nilai |
@@ -382,6 +397,16 @@ cd ~/flexric/build && make -j$(nproc) xapp_sec_moni
 | Final val loss | 0.000899 |
 | Threshold (P99.0) | 0.002833 |
 | FPR benign | 1.00% |
+
+**Hasil training v5 (20 Mei 2026):**
+| Parameter | Nilai |
+|-----------|-------|
+| Train sequences | 59,761 |
+| Val sequences | 15,673 |
+| Best epoch | (dari training v5) |
+| Threshold (P99.0) | 0.004659 |
+| μ / σ | 0.000904 / 0.001628 |
+| FPR benign | 0.61% |
 
 ---
 

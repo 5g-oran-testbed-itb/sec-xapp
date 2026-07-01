@@ -1,0 +1,7 @@
+{
+  "threshold": 0.025969,
+  "percentile": 97.0,
+  "fpr_pct": 3.05,
+  "source": "validation_set_weighted_mse_recalibrated",
+  "note": "Recalibrated from uniform-MSE training threshold to weighted Scheme A P97 via evaluate_per_ue_v2.py"
+}

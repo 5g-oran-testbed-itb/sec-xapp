@@ -1,7 +1,7 @@
 # train_gru_ue.py
 """Train GRU Autoencoder on per-UE KPM dataset.
 
-Uses feature_schema_ue (15 features) and RobustScaler.
+Uses feature_schema_ue (15 features) and MinMaxScaler.
 Does NOT modify feature_schema.py or models/scaler.pkl.
 
 Usage:
@@ -22,11 +22,14 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import MinMaxScaler
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from src.detection.gru_autoencoder import GRUAutoencoder
-from src.detection.feature_schema_ue import FEATURE_NAMES, FEATURE_WEIGHTS as _FW_DICT
+from src.detection.feature_schema_ue import (
+    FEATURE_NAMES, CSV_FEATURE_NAMES, FEATURE_WEIGHTS as _FW_DICT,
+    add_burst_features_rows,
+)
 
 _FEATURE_WEIGHTS = torch.tensor(
     [_FW_DICT.get(n, 1.0) for n in FEATURE_NAMES], dtype=torch.float32
@@ -42,11 +45,19 @@ def load_csv(path: str, label_filter: int = 0) -> pd.DataFrame:
         before = len(df)
         df = df[df['label'] == label_filter]
         print(f"  Filter label={label_filter}: {before} → {len(df)} rows")
-    for f in FEATURE_NAMES:
+    for f in CSV_FEATURE_NAMES:
         if f not in df.columns:
             print(f"Error: column '{f}' missing in {path}")
             sys.exit(1)
     return df
+
+
+def df_to_raw(df: pd.DataFrame) -> np.ndarray:
+    """Convert DataFrame to feature array, computing burst index features on-the-fly."""
+    rows = df.to_dict('records')
+    add_burst_features_rows(rows)
+    return np.array([[float(r.get(n, 0.0)) for n in FEATURE_NAMES] for r in rows],
+                    dtype=np.float32)
 
 
 def prepare_sequences(data: np.ndarray, seq_len: int) -> np.ndarray:
@@ -76,8 +87,39 @@ def compute_val_loss(model: GRUAutoencoder, val_seqs: np.ndarray,
     return total / count if count > 0 else 0.0
 
 
+class EarlyStopping:
+    def __init__(self, patience=10, min_delta=0.0001, checkpoint_path='checkpoint.pt'):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.checkpoint_path = checkpoint_path
+        self.counter = 0
+        self.best_loss = None
+        self.early_stop = False
+    def __call__(self, val_loss, model, optimizer, epoch):
+        if self.best_loss is None:
+            self.best_loss = val_loss
+            self.save_checkpoint(model, optimizer, val_loss, epoch)
+        elif val_loss > self.best_loss - self.min_delta:
+            self.counter += 1
+            print(f"EarlyStopping counter: {self.counter} out of {self.patience}")
+            if self.counter >= self.patience:
+                self.early_stop = True
+        else:
+            self.best_loss = val_loss
+            self.save_checkpoint(model, optimizer, val_loss, epoch)
+            self.counter = 0
+    def save_checkpoint(self, model, optimizer, val_loss, epoch):
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'loss': val_loss,
+        }, self.checkpoint_path)
+        print(f"Validation loss decreased. Saving best model checkpoint to {self.checkpoint_path}...")
+
+
 def train(model: GRUAutoencoder, train_norm: np.ndarray, val_seqs: np.ndarray,
-          epochs: int, batch_size: int, lr: float):
+          epochs: int, batch_size: int, lr: float, checkpoint_path: str):
     seq_len = model.seq_len
     train_seqs = prepare_sequences(train_norm, seq_len)
     dataset = torch.utils.data.TensorDataset(torch.FloatTensor(train_seqs))
@@ -85,8 +127,8 @@ def train(model: GRUAutoencoder, train_norm: np.ndarray, val_seqs: np.ndarray,
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     fw = _FEATURE_WEIGHTS
 
-    best_val, best_state, best_epoch = float('inf'), None, 0
     train_losses, val_losses = [], []
+    early_stopping = EarlyStopping(patience=10, min_delta=0.0001, checkpoint_path=checkpoint_path)
 
     print(f"[GRU] Training {epochs} epochs  seq_len={seq_len}  lr={lr}  "
           f"train_seqs={len(train_seqs)}  val_seqs={len(val_seqs)}")
@@ -105,17 +147,25 @@ def train(model: GRUAutoencoder, train_norm: np.ndarray, val_seqs: np.ndarray,
         v_avg = compute_val_loss(model, val_seqs, batch_size)
         train_losses.append(t_avg)
         val_losses.append(v_avg)
-        if v_avg < best_val:
-            best_val = v_avg
-            best_state = {k: v.clone() for k, v in model.state_dict().items()}
-            best_epoch = epoch
-        if epoch % 10 == 0:
-            print(f"  Epoch {epoch:3d}/{epochs}  train={t_avg:.6f}  val={v_avg:.6f}"
-                  f"{'  ← best' if epoch == best_epoch else ''}")
 
-    if best_state:
-        model.load_state_dict(best_state)
-        print(f"[GRU] Best checkpoint: epoch {best_epoch} (val={best_val:.6f})")
+        if epoch % 10 == 0 or epoch == 1:
+            print(f"  Epoch {epoch:3d}/{epochs}  train={t_avg:.6f}  val={v_avg:.6f}")
+
+        early_stopping(v_avg, model, optimizer, epoch)
+        if early_stopping.early_stop:
+            print(f"Early stopping triggered at epoch {epoch}. Training stopped.")
+            break
+
+    # Load best state from checkpoint
+    if os.path.exists(checkpoint_path):
+        checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        best_epoch = checkpoint['epoch']
+        best_val = checkpoint['loss']
+        print(f"[GRU] Loaded best model checkpoint from epoch {best_epoch} (val_loss={best_val:.6f})")
+    else:
+        best_epoch = epoch
+        print(f"[GRU] Warning: checkpoint file {checkpoint_path} not found!")
 
     return train_losses, val_losses, best_epoch
 
@@ -140,9 +190,9 @@ def main():
     print(f"[*] Loading validation CSV: {args.val}")
     df_val = load_csv(args.val)
 
-    scaler = RobustScaler()
-    train_raw = df_train[FEATURE_NAMES].values.astype(np.float32)
-    val_raw   = df_val[FEATURE_NAMES].values.astype(np.float32)
+    scaler = MinMaxScaler()
+    train_raw = df_to_raw(df_train)
+    val_raw   = df_to_raw(df_val)
     scaler.fit(train_raw)
 
     train_norm = scaler.transform(train_raw)
@@ -170,9 +220,11 @@ def main():
     param_count = sum(p.numel() for p in model.parameters())
     print(f"[*] GRU-AE params: {param_count:,}  features={len(FEATURE_NAMES)}")
 
+    checkpoint_path = args.model_out.replace('.pt', '_checkpoint.pt')
     train_losses, val_losses, best_epoch = train(
         model, train_norm, val_seqs,
         epochs=args.epochs, batch_size=args.batch_size, lr=args.lr,
+        checkpoint_path=checkpoint_path
     )
 
     losses_path = args.model_out.replace('.pt', '_losses.json')

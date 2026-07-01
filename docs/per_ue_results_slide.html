@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Per-UE IDS v4 — Results Slide</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    background: #d7dbe0;
+    display: flex; justify-content: center; padding: 24px;
+  }
+  .slide {
+    width: 1172px; background: #f4f5f7; border-radius: 14px;
+    padding: 34px 40px 30px; box-shadow: 0 6px 28px rgba(0,0,0,0.18);
+  }
+  .badge-results {
+    display: inline-block; background: #f47b20; color: #fff;
+    font-size: 12px; font-weight: 700; letter-spacing: 1px;
+    padding: 5px 16px; border-radius: 6px; margin-bottom: 14px;
+  }
+  h1 { font-size: 42px; color: #2a2a33; line-height: 1.05; }
+  .subtitle { color: #f47b20; font-size: 17px; font-weight: 600; margin-top: 4px; }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 24px; }
+  .pipe-title {
+    font-size: 19px; font-weight: 700; color: #1f4ea1; margin-bottom: 10px;
+    border-left: 5px solid #2f6fe0; padding-left: 9px;
+  }
+
+  table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 13px; }
+  thead th {
+    background: #2f6fe0; color: #fff; font-weight: 600; text-align: left;
+    padding: 7px 10px; font-size: 12.5px;
+  }
+  thead th:not(:first-child) { text-align: right; }
+  tbody td { padding: 6px 10px; border-bottom: 1px solid #e3e6ea; color: #2a2a33; }
+  tbody td:not(:first-child) { text-align: right; }
+  tbody tr:nth-child(even) { background: #eef1f4; }
+  .b { font-weight: 700; }
+  .dim { color: #8b949e; }
+
+  .note { font-size: 12px; color: #44474d; font-style: italic; line-height: 1.4; }
+  .note .star { color: #f47b20; }
+
+  .badges { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 22px; }
+  .pill {
+    color: #fff; font-weight: 700; font-size: 14px; text-align: center;
+    padding: 13px 10px; border-radius: 26px; display: flex;
+    align-items: center; justify-content: center; gap: 8px;
+  }
+  .pill.blue  { background: #2f6fe0; }
+  .pill.green { background: #2faa54; }
+  .pill.org   { background: #f47b20; }
+</style>
+</head>
+<body>
+<div class="slide">
+  <span class="badge-results">RESULTS</span>
+  <h1>Per-UE Security xApp Results</h1>
+  <div class="subtitle">Per-UE IDS v4 (seq_len=30, 19 features) — from the two ML models to rule-based</div>
+
+  <div class="cols">
+
+    <!-- ============ LSTM-UE PIPELINE ============ -->
+    <div>
+      <div class="pipe-title">LSTM-UE Pipeline</div>
+      <table>
+        <thead>
+          <tr><th>Metric</th><th>Rule-Based</th><th>LSTM-UE v4</th><th>Hybrid Rule + LSTM</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Accuracy</td><td>95.39%</td><td>96.05%</td><td>97.06%</td></tr>
+          <tr><td>Precision</td><td>97.50%</td><td>94.70%</td><td>94.60%</td></tr>
+          <tr><td class="b">Recall</td><td>85.80%</td><td>91.00%</td><td class="b">95.00%</td></tr>
+          <tr><td>F1 Score</td><td>0.913</td><td>0.928</td><td>0.948</td></tr>
+          <tr><td class="b">FPR</td><td class="b">2.93%</td><td>3.05%</td><td>4.97%</td></tr>
+          <tr><td>ROC-AUC</td><td class="dim">N/A</td><td>0.9797</td><td class="dim">N/A</td></tr>
+        </tbody>
+      </table>
+
+      <table>
+        <thead>
+          <tr><th>Attack</th><th>Rule</th><th>LSTM</th><th>Hybrid</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>UL Flood</td><td>97.2%</td><td>91.8%</td><td>97.2%</td></tr>
+          <tr><td>DL Flood</td><td>96.8%</td><td>90.9%</td><td>96.8%</td></tr>
+          <tr><td class="b">Burst ON/OFF</td><td>95.0%</td><td>96.8%</td><td class="b">98.5%</td></tr>
+          <tr><td class="b">RoQ</td><td>65.3%</td><td>85.0%</td><td class="b">89.4%</td></tr>
+        </tbody>
+      </table>
+      <div class="note"><span class="star">★</span> ML (seq_len=30) captures sustained moderate-load
+        RoQ that Rule misses — RoQ recall 65.3% &rarr; 89.4% via the hybrid.</div>
+    </div>
+
+    <!-- ============ GRU-UE PIPELINE ============ -->
+    <div>
+      <div class="pipe-title">GRU-UE Pipeline</div>
+      <table>
+        <thead>
+          <tr><th>Metric</th><th>Rule-Based</th><th>GRU-UE v4</th><th>Hybrid Rule + GRU</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Accuracy</td><td>95.39%</td><td>95.69%</td><td>97.41%</td></tr>
+          <tr><td>Precision</td><td>97.50%</td><td>94.80%</td><td>94.80%</td></tr>
+          <tr><td class="b">Recall</td><td>85.80%</td><td>89.60%</td><td class="b">96.10%</td></tr>
+          <tr><td>F1 Score</td><td>0.913</td><td>0.921</td><td class="b">0.954</td></tr>
+          <tr><td class="b">FPR</td><td class="b">2.93%</td><td>3.05%</td><td>5.14%</td></tr>
+          <tr><td>ROC-AUC</td><td class="dim">N/A</td><td>0.9807</td><td class="dim">N/A</td></tr>
+        </tbody>
+      </table>
+
+      <table>
+        <thead>
+          <tr><th>Attack</th><th>Rule</th><th>GRU</th><th>Hybrid</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>UL Flood</td><td>97.2%</td><td>90.6%</td><td class="b">97.9%</td></tr>
+          <tr><td>DL Flood</td><td>96.8%</td><td>87.6%</td><td>96.8%</td></tr>
+          <tr><td class="b">Burst ON/OFF</td><td>95.0%</td><td>97.7%</td><td class="b">98.8%</td></tr>
+          <tr><td class="b">RoQ</td><td>65.3%</td><td>82.2%</td><td class="b">92.2%</td></tr>
+        </tbody>
+      </table>
+      <div class="note"><span class="star">★</span> GRU Hybrid is the best overall configuration:
+        recall 96.1%, F1 0.954, RoQ pushed to 92.2% at FPR 5.14%.</div>
+    </div>
+
+  </div>
+
+  <div class="badges">
+    <div class="pill blue">🏆 Best Recall → Hybrid Rule+GRU: 96.1%</div>
+    <div class="pill green">🛡 Best FPR → Rule-Based: 2.93%</div>
+    <div class="pill org">🎯 Best F1 → Hybrid Rule+GRU: 0.954</div>
+  </div>
+</div>
+</body>
+</html>

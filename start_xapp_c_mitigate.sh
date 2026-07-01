@@ -1,27 +1,26 @@
 #!/bin/bash
 # =============================================================
-# O-RAN Security xApp (C Version) — Startup Script WITH HYBRID MITIGATION
+# O-RAN Security xApp (C Version) — Startup Script WITH E2SM-RC MITIGATION
 # =============================================================
 # Prerequisite: tmux, sshpass, fuser
 # Usage: ./start_xapp_c_mitigate.sh
 #
-# Mitigasi Hybrid (dua lapis):
-#   Layer 1 (O-RAN native): E2SM-RC PRB Throttle via Near-RT RIC
-#                           (O-RAN-compliant; terbatas oleh srsRAN RC Bug #468)
-#   Layer 2 (iptables fallback): DROP UE subnet di Core node via SSH
-#                           (aktif otomatis saat STAGE2-CRITICAL, dicabut saat script restart)
+# Mitigasi: E2SM-RC PRB Throttle via Near-RT RIC (O-RAN native)
+#   srsRAN RC Bug #468: RESOLVED (patch merged May 2024)
+#   Flag --mitigate: aktif — throttle max=5% saat CRITICAL, restore saat normal
+#   Cooldown: 30s | Auto-restore: 10s setelah severity=0
 #
-# Layout tmux:
-#   Window 0 "RAN+RIC":
-#     ┌──────────────────┬──────────────────┐
-#     │ Pane 0           │ Pane 1           │
-#     │ Near-RT RIC      │ srsGNB (SSH)     │
-#     ├──────────────────┼──────────────────┤
-#     │ Pane 2           │ Pane 3           │
-#     │ Prompt / info    │ xapp_sec_moni    │
-#     └──────────────────┴──────────────────┘
-#   Window 1 "Record": Petunjuk record_dataset.sh
-#   Window 2 "Mitigate": iptables watcher (otomatis)
+# Layout tmux Window 0 "RAN+RIC":
+#   ┌──────────────────┬──────────────────┐
+#   │ Pane 0           │ Pane 1           │
+#   │ Near-RT RIC      │ srsGNB (SSH)     │
+#   ├──────────────────┼──────────────────┤
+#   │ Pane 2           │ Pane 3           │
+#   │ Prompt / info    │ xapp_sec_moni    │
+#   └──────────────────┴──────────────────┘
+#
+# Window 1 "Record":
+#   Petunjuk record_dataset.sh — jalankan manual setelah UE attach
 # =============================================================
 
 SESSION="xapp_c"
@@ -37,16 +36,9 @@ RAN_GNB_DIR="/home/telmat/TA-Rizqi-Nabiel/O-RAN-Testbed-Automation/Next_Generati
 RAN_GNB_BIN="./srsRAN_Project/build/apps/gnb/gnb"
 RAN_GNB_CONF="configs/cots_n78_copied.yml"
 
-CORE_IP="10.91.2.4"
-CORE_USER="telmat"
-CORE_PASS="123"
-UE_SUBNET="10.45.0.0/16"
-
-XAPP_LOG="/tmp/xapp_sec_moni.log"
 PHASE2_FLAG="/tmp/xapp_c_phase2_start"
-MITIGATE_FLAG="/tmp/xapp_iptables_active"
-RECOVERY_FLAG="/tmp/xapp_recovery_start"
-WATCHER_SCRIPT="/tmp/xapp_iptables_watcher.sh"
+MODE_FILE="/tmp/xapp_detection_mode"
+IDS_MODE_FILE="/tmp/xapp_ids_mode"
 
 # =============================================================
 # Cleanup — jalankan saat script exit
@@ -55,19 +47,6 @@ cleanup() {
     echo "[cleanup] Killing gNB on RAN node ($RAN_IP)..."
     sshpass -p "$RAN_PASS" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
         "$RAN_USER@$RAN_IP" "sudo pkill -9 gnb 2>/dev/null" 2>/dev/null || true
-
-    if [ -f "$MITIGATE_FLAG" ]; then
-        echo "[cleanup] Removing iptables rules on Core ($CORE_IP)..."
-        sshpass -p "$CORE_PASS" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
-            "$CORE_USER@$CORE_IP" \
-            "echo '$CORE_PASS' | sudo -S iptables -D FORWARD -d $UE_SUBNET -j DROP 2>/dev/null; \
-             echo '$CORE_PASS' | sudo -S iptables -D FORWARD -s $UE_SUBNET -j DROP 2>/dev/null" \
-            2>/dev/null || true
-        rm -f "$MITIGATE_FLAG"
-        echo "[cleanup] iptables rules removed."
-    fi
-
-    rm -f "$PHASE2_FLAG" "$RECOVERY_FLAG" "$WATCHER_SCRIPT"
     echo "[cleanup] Done."
 }
 trap cleanup EXIT
@@ -90,77 +69,13 @@ pkill -9 -f "nearRT-RIC" 2>/dev/null
 pkill -9 -f "xapp_sec_moni" 2>/dev/null
 fuser -k -9 36421/sctp 2>/dev/null
 fuser -k -9 36422/sctp 2>/dev/null
-rm -f "$PHASE2_FLAG" "$MITIGATE_FLAG" "$RECOVERY_FLAG" "$XAPP_LOG"
-
-# Bersihkan iptables rules sesi lama di Core (idempotent — tidak error jika rule tidak ada)
-sshpass -p "$CORE_PASS" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
-    "$CORE_USER@$CORE_IP" \
-    "echo '$CORE_PASS' | sudo -S iptables -D FORWARD -d $UE_SUBNET -j DROP 2>/dev/null; \
-     echo '$CORE_PASS' | sudo -S iptables -D FORWARD -s $UE_SUBNET -j DROP 2>/dev/null; \
-     echo '$CORE_PASS' | sudo -S iptables -D FORWARD -d $UE_SUBNET -j DROP 2>/dev/null; \
-     echo '$CORE_PASS' | sudo -S iptables -D FORWARD -s $UE_SUBNET -j DROP 2>/dev/null" \
-    2>/dev/null || true
+rm -f "$PHASE2_FLAG" "$MODE_FILE" "$IDS_MODE_FILE"
 sleep 1
 
-# =============================================================
-# Tulis iptables watcher script ke /tmp
-# =============================================================
-cat > "$WATCHER_SCRIPT" << 'WATCHER_EOF'
-#!/bin/bash
-XAPP_LOG="$1"
-CORE_IP="$2"
-CORE_USER="$3"
-CORE_PASS="$4"
-UE_SUBNET="$5"
-MITIGATE_FLAG="$6"
-RECOVERY_FLAG="$7"
-
-_ts() { date '+%H:%M:%S'; }
-
-apply_iptables() {
-    echo "[watcher] $(_ts) STAGE2-CRITICAL — menerapkan iptables di $CORE_IP..."
-    sshpass -p "$CORE_PASS" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 \
-        "$CORE_USER@$CORE_IP" \
-        "echo '$CORE_PASS' | sudo -S iptables -I FORWARD -d $UE_SUBNET -j DROP 2>/dev/null; \
-         echo '$CORE_PASS' | sudo -S iptables -I FORWARD -s $UE_SUBNET -j DROP 2>/dev/null"
-    if [ $? -eq 0 ]; then
-        touch "$MITIGATE_FLAG"
-        echo "[watcher] $(_ts) iptables DROP applied — UE subnet $UE_SUBNET BLOCKED."
-    else
-        echo "[watcher] $(_ts) WARN: SSH ke Core ($CORE_IP) gagal — iptables tidak diterapkan."
-    fi
-}
-
-remove_iptables() {
-    echo "[watcher] $(_ts) Recovery 30s confirmed — removing iptables di $CORE_IP..."
-    sshpass -p "$CORE_PASS" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 \
-        "$CORE_USER@$CORE_IP" \
-        "echo '$CORE_PASS' | sudo -S iptables -D FORWARD -d $UE_SUBNET -j DROP 2>/dev/null; \
-         echo '$CORE_PASS' | sudo -S iptables -D FORWARD -s $UE_SUBNET -j DROP 2>/dev/null"
-    rm -f "$MITIGATE_FLAG" "$RECOVERY_FLAG"
-    echo "[watcher] $(_ts) iptables removed — jaringan UE dipulihkan."
-}
-
-echo "[watcher] $(_ts) Memantau $XAPP_LOG..."
-echo "[watcher] $(_ts) Core: $CORE_USER@$CORE_IP | UE subnet: $UE_SUBNET"
-echo "[watcher] $(_ts) Trigger: STAGE2-CRITICAL → DROP (permanen sampai script restart)"
-echo ""
-
-tail -F "$XAPP_LOG" 2>/dev/null | while IFS= read -r line; do
-    if [[ "$line" == *"STAGE2-CRITICAL"* ]]; then
-        if [ ! -f "$MITIGATE_FLAG" ]; then
-            apply_iptables
-        fi
-    fi
-done
-WATCHER_EOF
-chmod +x "$WATCHER_SCRIPT"
-
 echo "=============================================="
-echo "  O-RAN Security xApp (C) + HYBRID MITIGATE"
-echo "  Layer 1: E2SM-RC PRB Throttle (O-RAN native)"
-echo "  Layer 2: iptables DROP UE subnet ($UE_SUBNET)"
-echo "  Core: $CORE_USER@$CORE_IP"
+echo "  O-RAN Security xApp (C) + E2SM-RC MITIGATE"
+echo "  Mitigasi: E2SM-RC PRB Throttle (O-RAN native)"
+echo "  RC Bug #468: RESOLVED — --mitigate aktif"
 echo "  Attach: tmux attach -t $SESSION"
 echo "=============================================="
 
@@ -168,6 +83,7 @@ echo "=============================================="
 # Window 0: RAN + RIC — 4 pane
 # =============================================================
 tmux new-session -d -s "$SESSION" -n "RAN+RIC"
+
 tmux split-window -t "$SESSION:0.0" -h
 tmux split-window -t "$SESSION:0.0" -v
 tmux split-window -t "$SESSION:0.1" -v
@@ -184,9 +100,46 @@ tmux send-keys -t "$SESSION:0.1" \
      'cd $RAN_GNB_DIR && sudo pkill -9 gnb 2>/dev/null; sleep 1; \
       sudo stdbuf -oL $RAN_GNB_BIN -c $RAN_GNB_CONF 2>&1 | tee /tmp/gnb.log'" Enter
 
-# Pane 2: Prompt — tunggu UE attach (Kiri Bawah)
+# Pane 2: Prompt — pilih mode + ids-mode + tunggu UE attach (Kiri Bawah)
 tmux send-keys -t "$SESSION:0.2" \
     "echo '' && \
+     echo '  ╔══════════════════════════════════════════╗' && \
+     echo '  ║  O-RAN Security xApp — MITIGATE Mode    ║' && \
+     echo '  ║  E2SM-RC PRB Throttle (--mitigate aktif)║' && \
+     echo '  ╚══════════════════════════════════════════╝' && \
+     echo '' && \
+     echo '  [1/2] Cell-level detection (--mode):' && \
+     echo '    1) Rule-Based IDS only  (Stage 1 saja)' && \
+     echo '    2) LSTM only            (Stage 2 saja)' && \
+     echo '    3) Hybrid               (Rule + LSTM, default)' && \
+     echo '' && \
+     read -p '  >> Pilihan [1/2/3, default=3]: ' _mode_choice && \
+     case \"\$_mode_choice\" in \
+       1) echo rule   > '$MODE_FILE'; _mode_label=\"Rule-Based Only\" ;; \
+       2) echo lstm   > '$MODE_FILE'; _mode_label=\"LSTM Only\" ;; \
+       *) echo hybrid > '$MODE_FILE'; _mode_label=\"Hybrid (Rule+LSTM)\" ;; \
+     esac && \
+     echo '' && \
+     echo \"  Mode cell-level: \$_mode_label\" && \
+     echo '' && \
+     echo '  [2/2] Per-UE IDS (--ids-mode):' && \
+     echo '    1) rule-only     (rule saja, tanpa ML per-UE)' && \
+     echo '    2) lstm-hybrid   (Rule + LSTM-UE v4)' && \
+     echo '    3) gru-hybrid    (Rule + GRU-UE v4, rekomendasi)' && \
+     echo '    4) lstm-only     (ablasi ML saja)' && \
+     echo '    5) gru-only      (ablasi ML saja)' && \
+     echo '' && \
+     read -p '  >> Pilihan [1-5, default=3]: ' _ids_choice && \
+     case \"\$_ids_choice\" in \
+       1) echo 'rule-only'   > '$IDS_MODE_FILE'; _ids_label=\"rule-only\" ;; \
+       2) echo 'lstm-hybrid' > '$IDS_MODE_FILE'; _ids_label=\"lstm-hybrid\" ;; \
+       4) echo 'lstm-only'   > '$IDS_MODE_FILE'; _ids_label=\"lstm-only\" ;; \
+       5) echo 'gru-only'    > '$IDS_MODE_FILE'; _ids_label=\"gru-only\" ;; \
+       *) echo 'gru-hybrid'  > '$IDS_MODE_FILE'; _ids_label=\"gru-hybrid\" ;; \
+     esac && \
+     echo '' && \
+     echo \"  Mode per-UE IDS: \$_ids_label\" && \
+     echo '' && \
      echo '  Checklist sebelum ENTER:' && \
      echo '  [1] RIC: tunggu \"E2AP listening on :36421\" (Pane 0)' && \
      echo '  [2] gNB: tunggu E2 Setup sukses (Pane 1)' && \
@@ -195,19 +148,20 @@ tmux send-keys -t "$SESSION:0.2" \
      read -p '  >> Tekan ENTER setelah UE attach... ' && \
      touch '$PHASE2_FLAG' && \
      echo '' && \
-     echo '  xapp_sec_moni mulai di Pane 3 (Layer 1: E2SM-RC).' && \
-     echo '  iptables watcher mulai di Window 2 (Layer 2: fallback).' && \
-     echo '  Ctrl+B 2 → lihat watcher | Ctrl+B 1 → Record'" Enter
+     echo \"  xapp_sec_moni mulai di Pane 3.\" && \
+     echo \"  Cell: \$_mode_label | Per-UE: \$_ids_label | Mitigasi: E2SM-RC aktif\" && \
+     echo '  Pindah ke Window 1 (Record) untuk ganti label: Ctrl+B lalu 1'" Enter
 
-# Pane 3: xapp_sec_moni + tee ke log (Kanan Bawah)
-# --mitigate (E2SM-RC PRB throttle) dinonaktifkan — Layer 1 menyebabkan E2 timeout
-# Layer 2 (iptables via watcher) tetap aktif via STAGE2-CRITICAL log trigger
+# Pane 3: xapp_sec_moni + --mitigate (Kanan Bawah)
 tmux send-keys -t "$SESSION:0.3" \
-    "echo '=== [Pane 3] xapp_sec_moni — menunggu UE attach ===' && \
+    "echo '=== [Pane 3] xapp_sec_moni + E2SM-RC MITIGATE — menunggu UE attach ===' && \
      until [ -f '$PHASE2_FLAG' ]; do sleep 1; done && \
-     echo '=== Memulai xapp_sec_moni (label=0) — iptables mitigasi via watcher ===' && \
-     stdbuf -oL '$XAPP_BIN' -c '$XAPP_CONF' --label 0 2>&1 | tee '$XAPP_LOG'" Enter
+     _det_mode=\$(cat '$MODE_FILE' 2>/dev/null || echo hybrid) && \
+     _ids_mode=\$(cat '$IDS_MODE_FILE' 2>/dev/null || echo gru-hybrid) && \
+     echo \"=== Memulai xapp_sec_moni | mode: \$_det_mode | ids-mode: \$_ids_mode | --mitigate ===\" && \
+     '$XAPP_BIN' -c '$XAPP_CONF' --label 0 --mode \"\$_det_mode\" --ids-mode \"\$_ids_mode\" --mitigate --no-cell --no-csv" Enter
 
+# Fokus ke Pane 2 (prompt) saat attach
 tmux select-pane -t "$SESSION:0.2"
 
 # =============================================================
@@ -231,19 +185,6 @@ tmux send-keys -t "$SESSION:1" \
      echo '    5 = RF Burst        ./record_dataset.sh --label 5 --duration 600' && \
      echo '    6 = Jamming         ./record_dataset.sh --label 6 --duration 300' && \
      echo ''" Enter
-
-# =============================================================
-# Window 2: Mitigate — iptables watcher otomatis
-# =============================================================
-tmux new-window -t "$SESSION" -n "Mitigate"
-tmux send-keys -t "$SESSION:2" \
-    "echo '=== [Window 2] iptables Watcher — Layer 2 Hybrid Mitigation ===' && \
-     echo '  Menunggu UE attach dan xapp mulai...' && \
-     until [ -f '$PHASE2_FLAG' ]; do sleep 1; done && \
-     sleep 3 && \
-     '$WATCHER_SCRIPT' \
-       '$XAPP_LOG' '$CORE_IP' '$CORE_USER' '$CORE_PASS' \
-       '$UE_SUBNET' '$MITIGATE_FLAG' '$RECOVERY_FLAG'" Enter
 
 # Kembali ke Window 0 saat attach
 tmux select-window -t "$SESSION:0"

@@ -1,0 +1,114 @@
+{
+  "benign_validation": {
+    "dataset": "csv/dataset_validation_ue_juni.csv",
+    "n_rows": 1801,
+    "note": "Full 15-feature evaluation \u2014 all features native from per-UE CSV",
+    "GRU_UE_v1": {
+      "threshold": 2793671.0,
+      "TP": 0,
+      "FP": 18,
+      "TN": 1774,
+      "FN": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "fpr_pct": 1.0,
+      "accuracy": 99.0
+    },
+    "LSTM_UE_v1": {
+      "threshold": 2793713.029999951,
+      "TP": 0,
+      "FP": 18,
+      "TN": 1774,
+      "FN": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "fpr_pct": 1.0,
+      "accuracy": 99.0
+    }
+  },
+  "attack_partial": {
+    "dataset": "csv/dataset_testing_v3.csv",
+    "n_rows": 17598,
+    "note": "PARTIAL evaluation \u2014 only 8/15 per-UE features available from cell-level dataset. thp_dl_kbps, thp_ul_kbps, thp_total_kbps, thp_ul_delta, thp_dl_delta, ul_efficiency, traffic_direction all set to 0. Recall values are underestimates of true detection capability.",
+    "GRU_UE_v1": {
+      "threshold": 2793671.0,
+      "TP": 0,
+      "FP": 0,
+      "TN": 13816,
+      "FN": 3773,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "fpr_pct": 0.0,
+      "accuracy": 78.55,
+      "per_label": {
+        "Benign": {
+          "detected": 0,
+          "total": 13816,
+          "recall_pct": 0.0
+        },
+        "UL Flood": {
+          "detected": 0,
+          "total": 1017,
+          "recall_pct": 0.0
+        },
+        "DL Flood": {
+          "detected": 0,
+          "total": 1005,
+          "recall_pct": 0.0
+        },
+        "Burst ON/OFF": {
+          "detected": 0,
+          "total": 1033,
+          "recall_pct": 0.0
+        },
+        "RRC Storm": {
+          "detected": 0,
+          "total": 718,
+          "recall_pct": 0.0
+        }
+      }
+    },
+    "LSTM_UE_v1": {
+      "threshold": 2793713.029999951,
+      "TP": 0,
+      "FP": 0,
+      "TN": 13816,
+      "FN": 3773,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "fpr_pct": 0.0,
+      "accuracy": 78.55,
+      "per_label": {
+        "Benign": {
+          "detected": 0,
+          "total": 13816,
+          "recall_pct": 0.0
+        },
+        "UL Flood": {
+          "detected": 0,
+          "total": 1017,
+          "recall_pct": 0.0
+        },
+        "DL Flood": {
+          "detected": 0,
+          "total": 1005,
+          "recall_pct": 0.0
+        },
+        "Burst ON/OFF": {
+          "detected": 0,
+          "total": 1033,
+          "recall_pct": 0.0
+        },
+        "RRC Storm": {
+          "detected": 0,
+          "total": 718,
+          "recall_pct": 0.0
+        }
+      }
+    }
+  }
+}

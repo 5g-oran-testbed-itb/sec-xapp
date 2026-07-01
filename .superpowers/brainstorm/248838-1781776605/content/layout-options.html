@@ -1,0 +1,55 @@
+<h2>Per-UE Live Dashboard — Layout Options</h2>
+<p class="subtitle">Pilih layout panel tambahan yang paling sesuai untuk monitoring keamanan per-UE</p>
+
+<div style="margin-bottom:24px;padding:12px 16px;background:rgba(88,166,255,0.08);border:1px solid rgba(88,166,255,0.25);border-radius:8px;font-size:13px;color:#8b949e;">
+  <strong style="color:#c9d1d9">Panel yang sudah ada:</strong>&nbsp;
+  Active RNTIs · Alerted RNTIs · Alert Status · Detection Stage · MSE Score · Throughput UL/DL · PRB Util · PRB Direction · Eval iframe
+</div>
+
+<div class="options">
+
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Security-First Row</h3>
+      <p>Fokus ke alert &amp; anomaly. Tambah <strong>3 stat header baru</strong>: Total Alerts Today, Avg MSE (on alert), Avg Detection Latency. Lalu satu baris baru: <strong>Alert Timeline per RNTI</strong> (kapan tiap UE pernah alert) + <strong>MSE Heatmap per RNTI</strong>.</p>
+      <div style="margin-top:10px;font-size:11px;color:#58a6ff">
+        Cocok untuk: demo keamanan, evaluasi deteksi serangan
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>UE Activity Overview</h3>
+      <p>Fokus ke kondisi UE secara umum. Tambah <strong>tabel aktif UE</strong> (RNTI, THP UL, THP DL, PRB UL, Alert Status per baris), <strong>gauge PRB utilization saat ini</strong> (UL vs DL per RNTI), dan <strong>UL persistence timeline</strong>.</p>
+      <div style="margin-top:10px;font-size:11px;color:#3fb950">
+        Cocok untuk: monitoring jaringan live, memantau beban per UE
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Kombinasi (Recommended)</h3>
+      <p>Baris atas diperluas jadi <strong>6 stat</strong>: Active RNTIs · Alerted RNTIs · Alert Status · Total Alerts · Avg MSE · Det. Latency. Lalu tambah 3 baris baru:</p>
+      <ul style="margin:6px 0 0 16px;font-size:13px;line-height:1.8">
+        <li><strong>Tabel UE aktif</strong> — RNTI, THP UL/DL, PRB UL, Status (satu baris per UE)</li>
+        <li><strong>UL Persistence &amp; Traffic Direction</strong> per UE timeseries</li>
+        <li><strong>PRB Rolling Std</strong> per UE (indikator bursty behavior)</li>
+      </ul>
+      <div style="margin-top:10px;font-size:11px;color:#ffa502">
+        Paling lengkap — cocok untuk tugas akhir / demo komprehensif
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div style="margin-top:20px;padding:12px 16px;background:rgba(255,165,2,0.08);border:1px solid rgba(255,165,2,0.2);border-radius:8px;font-size:12px;color:#8b949e">
+  <strong style="color:#c9d1d9">Catatan metric yang tersedia:</strong>
+  Semua dari <code>xapp_ue_*</code> gauges — thp_ul_kbps, thp_dl_kbps, prb_ul, prb_dl, prb_direction, ul_efficiency, mse, alert_type, stage.
+  UL persistence &amp; prb_ul_roll_std ada di CSV tapi <em>belum</em> di-expose ke Prometheus (butuh tambah gauge baru di exporter).
+</div>

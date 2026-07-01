@@ -1,0 +1,83 @@
+/* Dark theme for Dash dropdown */
+.Select-control,
+.Select-menu-outer,
+.Select--single > .Select-control .Select-value,
+.Select-placeholder {
+    background-color: #0D1117 !important;
+    color: #C9D1D9 !important;
+    border-color: #30363D !important;
+}
+
+.Select-option {
+    background-color: #161B22 !important;
+    color: #C9D1D9 !important;
+}
+
+.Select-option:hover,
+.Select-option.is-focused {
+    background-color: #21262D !important;
+    color: #58A6FF !important;
+}
+
+.Select-option.is-selected {
+    background-color: #1f3a5f !important;
+    color: #58A6FF !important;
+}
+
+.Select-arrow-zone .Select-arrow {
+    border-top-color: #8B949E !important;
+}
+
+.Select--single .Select-value-label {
+    color: #C9D1D9 !important;
+}
+
+.Select-input input {
+    color: #C9D1D9 !important;
+}
+
+.Select-menu {
+    background-color: #161B22 !important;
+}
+
+.VirtualizedSelectFocusedOption {
+    background-color: #21262D !important;
+}
+
+/* Dash 2.x uses react-select */
+.Select__control {
+    background-color: #0D1117 !important;
+    border-color: #30363D !important;
+}
+
+.Select__menu {
+    background-color: #161B22 !important;
+    border: 1px solid #30363D !important;
+}
+
+.Select__option {
+    background-color: #161B22 !important;
+    color: #C9D1D9 !important;
+}
+
+.Select__option--is-focused {
+    background-color: #21262D !important;
+    color: #58A6FF !important;
+}
+
+.Select__single-value {
+    color: #C9D1D9 !important;
+}
+
+.Select__placeholder {
+    color: #8B949E !important;
+}
+
+.Select__input-container {
+    color: #C9D1D9 !important;
+}
+
+/* Loading spinner overlay */
+._dash-loading {
+    background: rgba(13,17,23,0.6) !important;
+}

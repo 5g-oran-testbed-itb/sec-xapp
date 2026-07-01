@@ -1,0 +1,122 @@
+<h2>Desain Final: Dashboard Lengkap</h2>
+<p class="subtitle">Semua panel baru (biru) ditambahkan ke dashboard yang ada. Apakah layout ini sudah sesuai?</p>
+
+<div class="mockup">
+  <div class="mockup-header">Security xApp Monitor — Grafana Dashboard</div>
+  <div class="mockup-body" style="padding:0; background:#181b1f;">
+
+    <!-- Row 1: Existing stat panels -->
+    <div style="padding:8px 8px 0; display:flex; gap:5px;">
+      <div style="flex:1; background:#1f2329; border-radius:4px; padding:7px; text-align:center;">
+        <div style="color:#aaa; font-size:8px;">DETECTION STATUS</div>
+        <div style="color:#51cf66; font-size:12px; font-weight:bold;">NORMAL</div>
+      </div>
+      <div style="flex:1; background:#1f2329; border-radius:4px; padding:7px; text-align:center;">
+        <div style="color:#aaa; font-size:8px;">PRB DL</div>
+        <div style="color:#7ec8e3; font-size:12px; font-weight:bold;">45%</div>
+      </div>
+      <div style="flex:1; background:#1f2329; border-radius:4px; padding:7px; text-align:center;">
+        <div style="color:#aaa; font-size:8px;">PRB UL</div>
+        <div style="color:#51cf66; font-size:12px; font-weight:bold;">12%</div>
+      </div>
+      <div style="flex:1; background:#1f2329; border-radius:4px; padding:7px; text-align:center;">
+        <div style="color:#aaa; font-size:8px;">CQI</div>
+        <div style="color:#ffd43b; font-size:12px; font-weight:bold;">15</div>
+      </div>
+      <div style="flex:1; background:#1f2329; border-radius:4px; padding:7px; text-align:center;">
+        <div style="color:#aaa; font-size:8px;">UL AIR DELAY</div>
+        <div style="color:#aaa; font-size:12px; font-weight:bold;">40ms</div>
+      </div>
+    </div>
+
+    <!-- Row 2: NEW — Latency stat panels -->
+    <div style="padding:6px 8px 0; display:flex; gap:5px;">
+      <div style="flex:1; background:#1f2329; border-radius:4px; padding:7px; text-align:center; border:1px solid #4a90d9; position:relative;">
+        <div style="position:absolute; top:-7px; left:6px; background:#4a90d9; color:#fff; font-size:7px; padding:1px 5px; border-radius:2px;">BARU</div>
+        <div style="color:#aaa; font-size:8px;">DETECT LATENCY</div>
+        <div style="color:#ffd43b; font-size:14px; font-weight:bold;">3.1s</div>
+        <div style="color:#555; font-size:7px;">Stage 0→1 (last event)</div>
+      </div>
+      <div style="flex:1; background:#1f2329; border-radius:4px; padding:7px; text-align:center; border:1px solid #4a90d9;">
+        <div style="color:#aaa; font-size:8px;">CONFIRM LATENCY</div>
+        <div style="color:#ff9f43; font-size:14px; font-weight:bold;">5.0s</div>
+        <div style="color:#555; font-size:7px;">Stage 1→2 (last event)</div>
+      </div>
+      <div style="flex:1; background:#1f2329; border-radius:4px; padding:7px; text-align:center; border:1px solid #8b0000;">
+        <div style="color:#aaa; font-size:8px;">TOTAL MITIGATE</div>
+        <div style="color:#ff6b6b; font-size:14px; font-weight:bold;">8.1s</div>
+        <div style="color:#555; font-size:7px;">Attack → Throttle aktif</div>
+      </div>
+      <div style="flex:2; background:#1f2329; border-radius:4px; padding:7px; display:flex; align-items:center; justify-content:center; color:#555; font-size:9px; font-style:italic;">
+        (slot kosong / bisa diisi panel lain)
+      </div>
+    </div>
+
+    <!-- Row 3: Existing PRB 5min -->
+    <div style="margin:6px 8px 0; background:#1f2329; border-radius:4px; padding:8px;">
+      <div style="color:#aaa; font-size:8px; margin-bottom:3px;">PRB Utilization DL / UL — Last 5 min <span style="color:#444;">(existing)</span></div>
+      <svg width="100%" height="30" viewBox="0 0 400 30" preserveAspectRatio="none">
+        <polyline points="0,22 100,20 200,18 300,19 400,21" fill="none" stroke="#7ec8e3" stroke-width="1.5"/>
+        <polyline points="0,27 100,26 200,25 300,26 400,27" fill="none" stroke="#51cf66" stroke-width="1.5"/>
+      </svg>
+    </div>
+
+    <!-- Row 4: NEW — PRB + Mitigation Shading -->
+    <div style="margin:6px 8px 0; background:#1f2329; border-radius:4px; padding:8px; border:1px solid #4a90d9; position:relative;">
+      <div style="position:absolute; top:-7px; left:8px; background:#4a90d9; color:#fff; font-size:7px; padding:1px 5px; border-radius:2px;">BARU</div>
+      <div style="color:#7ec8e3; font-size:8px; margin-bottom:3px;">PRB DL / UL + Mitigation Stage — Last 10 min</div>
+      <div style="position:relative; height:65px; overflow:hidden;">
+        <div style="position:absolute; left:42%; top:0; width:7%; height:100%; background:rgba(255,200,0,0.12);"></div>
+        <div style="position:absolute; left:49%; top:0; width:21%; height:100%; background:rgba(220,50,50,0.18);"></div>
+        <svg style="position:absolute; top:0; left:0; width:100%; height:100%;" viewBox="0 0 400 65" preserveAspectRatio="none">
+          <polyline points="0,57 100,54 170,52 200,50 220,5 240,3 260,4 280,62 320,59 380,57 400,55" fill="none" stroke="#7ec8e3" stroke-width="2"/>
+          <polyline points="0,61 100,60 170,59 200,59 220,57 240,56 260,57 280,61 320,61 380,61 400,60" fill="none" stroke="#51cf66" stroke-width="1.5"/>
+        </svg>
+        <div style="position:absolute; top:2px; left:2px; font-size:7px; color:#444;">100%</div>
+        <div style="position:absolute; bottom:2px; left:2px; font-size:7px; color:#444;">0%</div>
+        <div style="position:absolute; top:2px; left:43%; font-size:7px; color:#ffc107;">▲ WARN</div>
+        <div style="position:absolute; top:2px; left:50%; font-size:7px; color:#ff6b6b;">▲ CRITICAL</div>
+        <div style="position:absolute; top:2px; left:71%; font-size:7px; color:#51cf66;">▲ RESTORE</div>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:3px;">
+        <div style="display:flex; align-items:center; gap:3px; font-size:7px; color:#aaa;"><div style="width:10px; height:2px; background:#7ec8e3;"></div>PRB DL</div>
+        <div style="display:flex; align-items:center; gap:3px; font-size:7px; color:#aaa;"><div style="width:10px; height:2px; background:#51cf66;"></div>PRB UL</div>
+        <div style="display:flex; align-items:center; gap:3px; font-size:7px; color:#aaa;"><div style="width:10px; height:7px; background:rgba(255,200,0,0.3); border-radius:1px;"></div>Warning</div>
+        <div style="display:flex; align-items:center; gap:3px; font-size:7px; color:#aaa;"><div style="width:10px; height:7px; background:rgba(220,50,50,0.35); border-radius:1px;"></div>Critical / Throttle</div>
+      </div>
+    </div>
+
+    <!-- Row 5: LSTM (existing) -->
+    <div style="margin:6px 8px; background:#1f2329; border-radius:4px; padding:8px;">
+      <div style="color:#aaa; font-size:8px; margin-bottom:3px;">LSTM Anomaly Score <span style="color:#444;">(existing)</span></div>
+      <svg width="100%" height="25" viewBox="0 0 400 25" preserveAspectRatio="none">
+        <line x1="0" y1="17" x2="400" y2="17" stroke="#ff6b6b" stroke-width="0.5" stroke-dasharray="4 3"/>
+        <polyline points="0,22 80,21 160,20 220,19 240,4 260,3 280,17 350,21 400,22" fill="none" stroke="#ff9f43" stroke-width="1.5"/>
+      </svg>
+    </div>
+
+  </div>
+</div>
+
+<div class="section" style="margin-top:14px;">
+  <h3>Ringkasan Implementasi</h3>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; font-size:11px;">
+    <div>
+      <div style="color:#4a90d9; font-weight:bold; margin-bottom:6px;">File yang diubah</div>
+      <ul style="margin:0; padding-left:16px; color:#aaa;">
+        <li><code>exporter/csv_exporter.py</code> — tambah 3 Gauge + tracking timestamp transisi stage</li>
+        <li><code>grafana/provisioning/dashboards/main.json</code> — tambah 4 panel baru</li>
+      </ul>
+    </div>
+    <div>
+      <div style="color:#4a90d9; font-weight:bold; margin-bottom:6px;">Metric baru di exporter</div>
+      <ul style="margin:0; padding-left:16px; color:#aaa;">
+        <li><code>xapp_latency_detect_ms</code> — Stage 0→1</li>
+        <li><code>xapp_latency_confirm_ms</code> — Stage 1→2</li>
+        <li><code>xapp_latency_total_ms</code> — Stage 0→2</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<p style="margin-top:14px; color:#aaa; font-size:11px;">Apakah desain ini sudah oke? Saya akan tulis spec doc lalu buat implementation plan.</p>

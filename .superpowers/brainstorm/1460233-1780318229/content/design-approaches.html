@@ -1,0 +1,48 @@
+<h2>Pilih pendekatan implementasi</h2>
+<p class="subtitle">Tiga cara untuk menambahkan panel PRB + Mitigation Shading. Semua menghasilkan tampilan yang sama — bedanya di cara data ditarik.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>⭐ Pakai <code>xapp_detection_stage</code> sebagai fill series (Rekomendasi)</h3>
+      <p>Panel baru dengan 3 query: PRB DL, PRB UL, dan <code>xapp_detection_stage</code> yang di-scale dan dijadikan area fill. Stage 1 = kuning transparan, Stage 2 = merah transparan.</p>
+      <div style="margin-top:10px; background:#111; border-radius:6px; padding:10px; font-size:10px;">
+        <div style="color:#aaa; margin-bottom:6px;">Queries di panel baru:</div>
+        <div style="background:#1a1a2e; padding:6px; border-radius:4px; font-family:monospace; font-size:10px; margin-bottom:4px; color:#7ec8e3;">A: xapp_prb_dl_ratio</div>
+        <div style="background:#1a1a2e; padding:6px; border-radius:4px; font-family:monospace; font-size:10px; margin-bottom:4px; color:#51cf66;">B: xapp_prb_ul_ratio</div>
+        <div style="background:#1a1a2e; padding:6px; border-radius:4px; font-family:monospace; font-size:10px; color:#ff6b6b;">C: xapp_detection_stage / 2 (scale 0–1)
+<span style="color:#aaa;">→ override: fill-below, opacity 20%</span>
+<span style="color:#aaa;">→ thresholds: 0.4=yellow, 0.9=red</span></div>
+      </div>
+      <div class="pros-cons" style="margin-top:8px;">
+        <div class="pros"><h4>Pro</h4><ul><li>Zero metric baru — pakai yang sudah ada</li><li>Hanya ubah 1 file: <code>main.json</code></li><li>Tidak perlu rebuild exporter</li></ul></div>
+        <div class="cons"><h4>Kekurangan</h4><ul><li>Shading = "detection stage" bukan "throttle aktif" secara harfiah (tapi identik secara praktis)</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Grafana Annotations (vertical lines)</h3>
+      <p>Tambahkan annotation query ke dashboard: deteksi kapan <code>xapp_detection_stage</code> naik ke 1 atau 2. Hasilnya garis vertikal di semua panel saat stage berubah.</p>
+      <div class="pros-cons" style="margin-top:8px;">
+        <div class="pros"><h4>Pro</h4><ul><li>Berlaku ke semua panel (PRB lama, LSTM, dll)</li><li>Garis "start" dan "end" jelas</li></ul></div>
+        <div class="cons"><h4>Kekurangan</h4><ul><li>Kurang dramatis — garis tipis, bukan shading area</li><li>Perlu Grafana annotation API config</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Metric baru <code>xapp_throttle_active</code> di exporter</h3>
+      <p>Tambahkan Gauge baru di <code>csv_exporter.py</code>: set ke 1 saat <code>stage2_confirmed == 1</code>, 0 otherwise. Dipakai untuk shading di panel baru.</p>
+      <div class="pros-cons" style="margin-top:8px;">
+        <div class="pros"><h4>Pro</h4><ul><li>Semantically paling tepat: "throttle active" bukan "stage"</li><li>Bisa dipakai di panel lain juga</li></ul></div>
+        <div class="cons"><h4>Kekurangan</h4><ul><li>Perlu edit 2 file: <code>csv_exporter.py</code> + <code>main.json</code></li><li>Butuh rebuild exporter container</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

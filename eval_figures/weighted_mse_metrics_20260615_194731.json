@@ -1,0 +1,101 @@
+{
+  "timestamp": "20260615_194731",
+  "model": "models/gru_ue_v3.pt",
+  "scoring": "weighted_mse_scheme_a",
+  "weights_file": "models/gru_ue_v3_weights.json",
+  "val_csv": "csv/dataset_validation_ue_juni.csv",
+  "attack_csv": "csv/dataset_attack_ue_juni.csv",
+  "auc": {
+    "uniform": 0.8752271972604085,
+    "weighted": 0.9582256755859312
+  },
+  "operating_points": {
+    "1pct": {
+      "fpr": 0.010033003300330034,
+      "recall": 0.42563429571303585,
+      "threshold": 0.02029949240386486,
+      "per_class": {
+        "UL": 0.3201754385964912,
+        "DL": 0.5264623955431755,
+        "Burst": 0.8027586206896552,
+        "RoQ": 0.07506702412868632
+      }
+    },
+    "2pct": {
+      "fpr": 0.020066006600660068,
+      "recall": 0.6697287839020123,
+      "threshold": 0.013306984677910805,
+      "per_class": {
+        "UL": 0.6600877192982456,
+        "DL": 0.9554317548746518,
+        "Burst": 0.9365517241379311,
+        "RoQ": 0.27882037533512066
+      }
+    },
+    "3pct": {
+      "fpr": 0.030099009900990098,
+      "recall": 0.7944006999125109,
+      "threshold": 0.010101866908371449,
+      "per_class": {
+        "UL": 0.868421052631579,
+        "DL": 0.9832869080779945,
+        "Burst": 0.9806896551724138,
+        "RoQ": 0.4772117962466488
+      }
+    },
+    "5pct": {
+      "fpr": 0.050693069306930696,
+      "recall": 0.8853893263342082,
+      "threshold": 0.007673619780689478,
+      "per_class": {
+        "UL": 0.9780701754385965,
+        "DL": 0.9860724233983287,
+        "Burst": 0.993103448275862,
+        "RoQ": 0.675603217158177
+      }
+    }
+  },
+  "baselines": {
+    "rule_only": {
+      "fpr_val": 0.029,
+      "recall": 0.861,
+      "per_class": {
+        "UL": 0.972,
+        "DL": 0.969,
+        "Burst": 0.95,
+        "RoQ": 0.653
+      }
+    },
+    "gru_v3_uniform_p97": {
+      "fpr_val": 0.0301,
+      "recall": 0.178,
+      "per_class": {
+        "UL": 0.105,
+        "DL": 0.019,
+        "Burst": 0.455,
+        "RoQ": 0.028
+      }
+    }
+  },
+  "feature_weights": {
+    "prb_usage_dl_ratio": 1.6451072692871094,
+    "prb_usage_ul_ratio": 4.741132736206055,
+    "thp_dl_kbps": 3.521254777908325,
+    "thp_ul_kbps": 4.643002510070801,
+    "prb_direction": 1.0144058465957642,
+    "prb_total": 3.5385067462921143,
+    "prb_ul_delta": 4.029518127441406,
+    "ul_efficiency": 1.9381186962127686,
+    "prb_ul_roll_mean": 3.984485626220703,
+    "prb_ul_roll_std": 3.7216718196868896,
+    "ul_persistence": 1.6172423362731934,
+    "thp_total_kbps": 3.350046157836914,
+    "thp_ul_delta": 3.7415857315063477,
+    "thp_dl_delta": 1.903520107269287,
+    "traffic_direction": 0.7612410187721252,
+    "prb_ul_burst_index": 0.4260745942592621,
+    "prb_dl_burst_index": 0.40556302666664124,
+    "thp_ul_burst_index": 1.214019536972046,
+    "thp_dl_burst_index": 1.147439956665039
+  }
+}

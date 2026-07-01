@@ -1,0 +1,73 @@
+<h2>Panel Grafana mana yang ingin ditambahkan?</h2>
+<p class="subtitle">Dashboard saat ini sudah punya PRB DL/UL timeseries (5 menit). Pilih tampilan yang paling sesuai kebutuhan kamu.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>PRB + Mitigation Overlay</h3>
+      <p>Satu grafik PRB DL/UL <strong>dengan anotasi event mitigasi</strong> — garis vertikal merah saat throttle aktif, hijau saat restore. Langsung terlihat efek PRB drop saat mitigasi.</p>
+      <div style="margin-top:10px; background:#1a1a2e; border-radius:6px; padding:12px; font-family:monospace; font-size:11px;">
+        <div style="color:#7ec8e3; margin-bottom:4px;">PRB DL %  ██████████████████ 95%</div>
+        <div style="color:#ff6b6b; text-align:center; font-size:10px;">│← THROTTLE AKTIF (Stage2) →│</div>
+        <div style="color:#7ec8e3; margin-bottom:4px;">PRB DL %  ██ 5%</div>
+        <div style="color:#51cf66; text-align:center; font-size:10px;">│← RESTORE →│</div>
+        <div style="color:#7ec8e3;">PRB DL %  █████████ 45%</div>
+      </div>
+      <div class="pros-cons" style="margin-top:8px;">
+        <div class="pros"><h4>Pro</h4><ul><li>Langsung terlihat korelasi PRB ↔ mitigasi</li><li>1 panel cukup</li></ul></div>
+        <div class="cons"><h4>Kekurangan</h4><ul><li>Butuh metric baru: <code>xapp_throttle_active</code></li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Mitigation Timeline Panel</h3>
+      <p>Panel baru khusus: <strong>timeline bar</strong> yang menampilkan Detection Stage (0=Normal, 1=Warning, 2=Critical/Mitigasi) sebagai warna. PRB DL/UL chart tetap terpisah di atas.</p>
+      <div style="margin-top:10px; background:#1a1a2e; border-radius:6px; padding:12px; font-family:monospace; font-size:11px;">
+        <div style="margin-bottom:4px; color:#aaa;">Stage Timeline:</div>
+        <div style="display:flex; height:20px; gap:2px; align-items:center;">
+          <div style="flex:3; background:#2d6a2d; border-radius:3px; height:100%; display:flex; align-items:center; justify-content:center; color:#fff; font-size:9px;">NORMAL</div>
+          <div style="flex:1; background:#b8860b; border-radius:3px; height:100%; display:flex; align-items:center; justify-content:center; color:#fff; font-size:9px;">WARN</div>
+          <div style="flex:2; background:#8b0000; border-radius:3px; height:100%; display:flex; align-items:center; justify-content:center; color:#fff; font-size:9px;">CRITICAL</div>
+          <div style="flex:2; background:#2d6a2d; border-radius:3px; height:100%; display:flex; align-items:center; justify-content:center; color:#fff; font-size:9px;">RESTORE</div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:8px;">
+        <div class="pros"><h4>Pro</h4><ul><li>Pakai metric yang sudah ada (<code>xapp_detection_stage</code>)</li><li>Tidak perlu metric baru</li></ul></div>
+        <div class="cons"><h4>Kekurangan</h4><ul><li>Tidak langsung terlihat efek PRB throttle</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>PRB Received vs Scheduled (Dual Panel)</h3>
+      <p>Dua panel berdampingan: kiri = PRB DL/UL timeseries, kanan = stat "Throttle Active?" + durasi throttle kumulatif. Tampilkan juga deteksi stage di bawah PRB chart.</p>
+      <div style="margin-top:10px; background:#1a1a2e; border-radius:6px; padding:12px; font-size:11px; display:flex; gap:12px;">
+        <div style="flex:2; border:1px solid #333; border-radius:4px; padding:8px;">
+          <div style="color:#7ec8e3; font-size:10px; margin-bottom:6px;">PRB DL/UL Over Time</div>
+          <div style="color:#aaa; font-size:9px;">█████░░░░░ DL 50%</div>
+          <div style="color:#51cf66; font-size:9px;">████████░░ UL 80%</div>
+        </div>
+        <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+          <div style="border:1px solid #8b0000; border-radius:4px; padding:8px; text-align:center;">
+            <div style="color:#ff6b6b; font-size:10px;">THROTTLE</div>
+            <div style="color:#ff6b6b; font-size:16px; font-weight:bold;">AKTIF</div>
+          </div>
+          <div style="border:1px solid #333; border-radius:4px; padding:8px; text-align:center;">
+            <div style="color:#aaa; font-size:9px;">Durasi Total</div>
+            <div style="color:#fff; font-size:14px;">3m 20s</div>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:8px;">
+        <div class="pros"><h4>Pro</h4><ul><li>Paling informatif untuk demo/thesis</li></ul></div>
+        <div class="cons"><h4>Kekurangan</h4><ul><li>Butuh metric baru + lebih banyak panel space</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -226,7 +226,7 @@ ssh telmat@10.91.2.4 "sudo open5gs-dbctl subscriber_status <IMSI> 1 1"
 
 | Issue | Detail |
 |-------|--------|
-| **srsRAN RC Bug #468** | gNB crash setelah RC Control. `--mitigate` opt-in saja. |
+| ~~srsRAN RC Bug #468~~ | **Resolved** (patch merged Mei 2024, gckopper/wdgj). E2SM-RC PRB throttle aktif di `start_xapp_c_mitigate.sh` via `--mitigate`. |
 | **DRB metrics selalu 0** | srsRAN KPM DU tidak melaporkan throughput. PRB-only feature. |
 | **ONNX IR version mismatch** | Warning IR v10 vs max v9 saat startup — tidak mempengaruhi fungsionalitas. |
 | **TCP speedtest FP** | Rule 1 punya bidirectional guard (PRB_UL<3% untuk DL flood). |

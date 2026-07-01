@@ -26,9 +26,15 @@ from sklearn.metrics import roc_curve, auc as sklearn_auc
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from src.detection.gru_autoencoder import GRUAutoencoder
 from src.detection.lstm_autoencoder import LSTMAutoencoder
-from src.detection.feature_schema_ue import FEATURE_NAMES, NUM_FEATURES
+from src.detection.feature_schema_ue import FEATURE_NAMES, NUM_FEATURES, FEATURE_WEIGHTS, add_burst_features_rows
 
-SEQ_LEN = 10
+SEQ_LEN = 30
+# Weighted MSE scoring — Scheme A weights derived from per-feature error analysis.
+_WEIGHT_VEC = torch.tensor(
+    [FEATURE_WEIGHTS.get(n, 1.0) for n in FEATURE_NAMES], dtype=torch.float32
+)
+# xApp KPM cycle period — mitigation is triggered on the next cycle after detection.
+_XAPP_CYCLE_S = 0.12
 LABEL_NAMES = {1: "ul_flood", 2: "dl_flood", 3: "burst", 4: "roq"}
 
 GRU_CFG = {
@@ -164,31 +170,31 @@ def run_rule_engine(X: np.ndarray) -> np.ndarray:
 # ── Section 3: ML scoring + inference latency ─────────────────────────────────
 
 def load_models(
-    lstm_pt:    str = "models/lstm_ue_v1.pt",
-    lstm_pkl:   str = "models/lstm_ue_v1_scaler.pkl",
-    lstm_json:  str = "models/lstm_ue_v1_threshold.json",
-    gru_pt:     str = "models/gru_ue_v1.pt",
-    gru_pkl:    str = "models/gru_ue_v1_scaler.pkl",
-    gru_json:   str = "models/gru_ue_v1_threshold.json",
+    lstm_pt:    str = "models/lstm_ue_v4.pt",
+    lstm_pkl:   str = "models/lstm_ue_v4_scaler.pkl",
+    lstm_json:  str = "models/lstm_ue_v4_threshold.json",
+    gru_pt:     str = "models/gru_ue_v4.pt",
+    gru_pkl:    str = "models/gru_ue_v4_scaler.pkl",
+    gru_json:   str = "models/gru_ue_v4_threshold.json",
 ) -> dict:
     """Returns dict with 'lstm' and 'gru' keys, each a (model, scaler, threshold) tuple."""
-    print("[*] Loading GRU-UE v1...")
+    print(f"[*] Loading GRU-UE from {gru_pt}...")
     gru = GRUAutoencoder.load(gru_pt, GRU_CFG)
     gru.eval()
     with open(gru_pkl, "rb") as f:
         gru_scaler = pickle.load(f)
     with open(gru_json) as f:
         gru_thresh = json.load(f)["threshold"]
-    print(f"    threshold={gru_thresh:.0f}")
+    print(f"    threshold={gru_thresh:.6f}")
 
-    print("[*] Loading LSTM-UE v1...")
+    print(f"[*] Loading LSTM-UE from {lstm_pt}...")
     lstm = LSTMAutoencoder.load(lstm_pt, LSTM_CFG)
     lstm.eval()
     with open(lstm_pkl, "rb") as f:
         lstm_scaler = pickle.load(f)
     with open(lstm_json) as f:
         lstm_thresh = json.load(f)["threshold"]
-    print(f"    threshold={lstm_thresh:.0f}")
+    print(f"    threshold={lstm_thresh:.6f}")
 
     return {
         "lstm": (lstm, lstm_scaler, lstm_thresh),
@@ -200,10 +206,10 @@ def score_ml(
     model, scaler, X_raw: np.ndarray, batch: int = 256
 ) -> tuple[np.ndarray, list[float]]:
     """
-    Score all windows from X_raw.
-    X_raw: (N, 15) unscaled features.
+    Score all windows from X_raw using weighted MSE (Scheme A weights).
+    X_raw: (N, num_features) unscaled features.
     Returns:
-      mse (N-9,) float32 — MSE[i] aligns to timestep i+9 (last row of window)
+      score (N-seq_len+1,) float32 — weighted MSE per window
       latency_ms (list of float) — per-window inference time in milliseconds
     """
     X_scaled = scaler.transform(X_raw).astype(np.float32)
@@ -211,21 +217,24 @@ def score_ml(
     if len(wins) == 0:
         return np.array([], dtype=np.float32), []
 
-    mse_parts: list[np.ndarray] = []
+    score_parts: list[np.ndarray] = []
     latencies: list[float] = []
     model.eval()
+    w = _WEIGHT_VEC  # (num_features,)
 
     for i in range(0, len(wins), batch):
         chunk = torch.tensor(wins[i:i + batch])
         t0 = time.perf_counter()
-        err = model.compute_reconstruction_error(chunk)
+        with torch.no_grad():
+            recon = model(chunk)                          # (B, seq, feat)
+            fe = ((recon - chunk) ** 2).mean(dim=1)      # (B, feat) — mean over time
+            score = (fe * w).sum(dim=1) / w.sum()        # (B,) — weighted mean over feat
         t1 = time.perf_counter()
-        mse_parts.append(err.detach().numpy())
+        score_parts.append(score.numpy())
         n = len(chunk)
-        per_win_ms = (t1 - t0) * 1000.0 / n
-        latencies.extend([per_win_ms] * n)
+        latencies.extend([(t1 - t0) * 1000.0 / n] * n)
 
-    return np.concatenate(mse_parts).astype(np.float32), latencies
+    return np.concatenate(score_parts).astype(np.float32), latencies
 
 
 # ── Section 4: Metrics ────────────────────────────────────────────────────────
@@ -337,6 +346,25 @@ def compute_detection_latency(
     return result
 
 
+def compute_mitigation_latency(det_latency: dict) -> dict:
+    """
+    Mitigation latency = detection latency + one xApp KPM cycle (_XAPP_CYCLE_S).
+    After detection fires, the xApp triggers E2SM-RC PRB throttle on the next cycle.
+    Inherits n_segments from detection latency (same segments, same FN exclusion).
+    """
+    result = {}
+    for cls, v in det_latency.items():
+        if v["mean_s"] is None:
+            result[cls] = {"mean_s": None, "median_s": None, "n_segments": 0}
+        else:
+            result[cls] = {
+                "mean_s":     round(v["mean_s"]   + _XAPP_CYCLE_S, 3),
+                "median_s":   round(v["median_s"] + _XAPP_CYCLE_S, 3),
+                "n_segments": v["n_segments"],
+            }
+    return result
+
+
 def compute_inference_latency(latency_ms: list[float]) -> dict:
     """Summarise per-window inference times (ms). Returns mean/median/p95."""
     if not latency_ms:
@@ -375,6 +403,7 @@ def build_result_entry(
     auc_val: float | None = None,
 ) -> dict:
     """Build the JSON sub-dict for one detection configuration."""
+    mit_latency = compute_mitigation_latency(det_latency)
     entry: dict = {
         "recall":    cm["recall"],
         "precision": cm["precision"],
@@ -384,8 +413,9 @@ def build_result_entry(
             "tn": cm["tn"], "fp": cm["fp"],
             "fn": cm["fn"], "tp": cm["tp"],
         },
-        "detection_latency": det_latency,
-        "per_class_recall":  per_class_recall,
+        "detection_latency":   det_latency,
+        "mitigation_latency":  mit_latency,
+        "per_class_recall":    per_class_recall,
     }
     if inf_latency is not None:
         entry["inference_latency"] = inf_latency
@@ -406,8 +436,8 @@ def save_results_json(metadata: dict, results: dict, output_dir: str) -> str:
 
 def print_summary_table(results: dict) -> None:
     configs = ["rule_only", "lstm_only", "gru_only", "lstm_hybrid", "gru_hybrid"]
-    header = (f"{'Config':<16} {'Recall':>7} {'F1':>7} "
-              f"{'FPR_val':>8} {'Det.Lat(s)':>12} {'Inf.Lat(ms)':>12}")
+    header = (f"{'Config':<16} {'Recall':>7} {'F1':>7} {'FPR_val':>8} "
+              f"{'Det.Lat(s)':>11} {'Mit.Lat(s)':>11} {'Inf.Lat(ms)':>12}")
     print("\n" + header)
     print("─" * len(header))
     for cfg in configs:
@@ -421,10 +451,16 @@ def print_summary_table(results: dict) -> None:
             v["mean_s"] for v in r.get("detection_latency", {}).values()
             if isinstance(v, dict) and v.get("mean_s") is not None
         ]
-        det_str = f"{float(np.mean(det_vals)):.1f}" if det_vals else "—"
+        mit_vals = [
+            v["mean_s"] for v in r.get("mitigation_latency", {}).values()
+            if isinstance(v, dict) and v.get("mean_s") is not None
+        ]
+        det_str = f"{float(np.mean(det_vals)):.2f}" if det_vals else "—"
+        mit_str = f"{float(np.mean(mit_vals)):.2f}" if mit_vals else "—"
         inf_ms  = r.get("inference_latency", {}).get("mean_ms")
         inf_str = f"{inf_ms:.2f}" if inf_ms is not None else "—"
-        print(f"{cfg:<16} {recall:>7} {f1:>7} {fpr:>8} {det_str:>12} {inf_str:>12}")
+        print(f"{cfg:<16} {recall:>7} {f1:>7} {fpr:>8} "
+              f"{det_str:>11} {mit_str:>11} {inf_str:>12}")
 
 
 # ── Section 6: Plots ──────────────────────────────────────────────────────────
@@ -438,163 +474,246 @@ def _ensure_matplotlib():
 
 def plot_confusion_matrices(results: dict, output_dir: str) -> None:
     plt = _ensure_matplotlib()
-    configs = ["rule_only", "lstm_only", "gru_only", "lstm_hybrid", "gru_hybrid"]
-    fig, axes = plt.subplots(2, 3, figsize=(14, 9))
-    axes = axes.flatten()
+    for model_type in ["lstm", "gru"]:
+        configs = ["rule_only", f"{model_type}_only", f"{model_type}_hybrid"]
+        fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+        axes = axes.flatten()
 
-    for idx, cfg in enumerate(configs):
-        ax = axes[idx]
-        r  = results[cfg]
-        cm_d = r["confusion_matrix"]
-        cm   = np.array([[cm_d["tn"], cm_d["fp"]],
-                         [cm_d["fn"], cm_d["tp"]]])
-        im = ax.imshow(cm, interpolation="nearest", cmap="Blues")
-        ax.set_title(cfg, fontsize=11, fontweight="bold")
-        ax.set_xlabel("Predicted"); ax.set_ylabel("Actual")
-        ax.set_xticks([0, 1]); ax.set_yticks([0, 1])
-        ax.set_xticklabels(["Normal", "Anomaly"])
-        ax.set_yticklabels(["Normal", "Anomaly"])
-        for i in range(2):
-            for j in range(2):
-                ax.text(j, i, str(cm[i, j]),
-                        ha="center", va="center", fontsize=13,
-                        color="white" if cm[i, j] > cm.max() / 2 else "black")
-        plt.colorbar(im, ax=ax)
+        for idx, cfg in enumerate(configs):
+            ax = axes[idx]
+            r  = results[cfg]
+            cm_d = r["confusion_matrix"]
+            cm   = np.array([[cm_d["tn"], cm_d["fp"]],
+                             [cm_d["fn"], cm_d["tp"]]])
 
-    # subplot 6: summary text
-    ax6 = axes[5]
-    ax6.axis("off")
-    lines = ["Summary", ""]
-    for cfg in configs:
-        r = results[cfg]
-        lines.append(f"{cfg}: R={r['recall']*100:.1f}% F1={r['f1']*100:.1f}%")
-    ax6.text(0.05, 0.95, "\n".join(lines), transform=ax6.transAxes,
-             verticalalignment="top", fontfamily="monospace", fontsize=9)
+            cmap = "Greens" if model_type == "lstm" else "Oranges"
+            im = ax.imshow(cm, interpolation="nearest", cmap=cmap)
+            ax.set_title(cfg.upper().replace("_ONLY", "-ONLY").replace("_HYBRID", "-HYBRID"), fontsize=11, fontweight="bold")
+            ax.set_xlabel("Predicted"); ax.set_ylabel("Actual")
+            ax.set_xticks([0, 1]); ax.set_yticks([0, 1])
+            ax.set_xticklabels(["Normal", "Anomaly"])
+            ax.set_yticklabels(["Normal", "Anomaly"])
+            for i in range(2):
+                for j in range(2):
+                    ax.text(j, i, f"{cm[i, j]:,}",
+                            ha="center", va="center", fontsize=13,
+                            color="white" if cm[i, j] > cm.max() / 2 else "black")
+            plt.colorbar(im, ax=ax)
 
-    plt.tight_layout()
-    path = os.path.join(output_dir, "eval_confusion.png")
-    plt.savefig(path, dpi=150, bbox_inches="tight")
-    plt.close()
-    print(f"[FIG] {path}")
+        # Summary text in the 4th quadrant
+        ax_text = axes[3]
+        ax_text.axis("off")
+        lines = ["Summary Metrics", "=" * 25, ""]
+        for cfg in configs:
+            r = results[cfg]
+            lines.append(f"{cfg.upper().replace('_', ' ')}:")
+            lines.append(f"  Recall: {r['recall']*100:.2f}%")
+            lines.append(f"  F1-Score: {r['f1']*100:.2f}%")
+            lines.append(f"  FPR (Val): {r['fpr_val']*100:.2f}%")
+            lines.append("")
+        ax_text.text(0.05, 0.95, "\n".join(lines), transform=ax_text.transAxes,
+                     verticalalignment="top", fontfamily="monospace", fontsize=9.5)
+
+        plt.tight_layout()
+        path = os.path.join(output_dir, f"eval_confusion_{model_type}.png")
+        plt.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close()
+        print(f"[FIG] {path}")
 
 
 def plot_per_class(results: dict, output_dir: str) -> None:
     plt = _ensure_matplotlib()
-    configs = ["rule_only", "lstm_only", "gru_only", "lstm_hybrid", "gru_hybrid"]
     classes = ["ul_flood", "dl_flood", "burst", "roq"]
     labels  = ["UL Flood", "DL Flood", "Burst", "RoQ"]
 
-    x = np.arange(len(configs))
-    width = 0.18
-    fig, ax = plt.subplots(figsize=(12, 5))
+    for model_type in ["lstm", "gru"]:
+        configs = ["rule_only", f"{model_type}_only", f"{model_type}_hybrid"]
+        x = np.arange(len(configs))
+        width = 0.18
+        fig, ax = plt.subplots(figsize=(8, 5))
 
-    for i, (cls, lbl) in enumerate(zip(classes, labels)):
-        vals = []
-        for cfg in configs:
-            v = results[cfg].get("per_class_recall", {}).get(cls)
-            vals.append((v or 0.0) * 100)
-        ax.bar(x + i * width, vals, width, label=lbl)
+        colors = ['#1f77b4', '#aec7e8', '#ff7f0e', '#ffbb78'] if model_type == "lstm" else ['#2ca02c', '#98df8a', '#d62728', '#ff9896']
+        for i, (cls, lbl) in enumerate(zip(classes, labels)):
+            vals = []
+            for cfg in configs:
+                v = results[cfg].get("per_class_recall", {}).get(cls)
+                vals.append((v or 0.0) * 100)
+            ax.bar(x + i * width, vals, width, label=lbl, color=colors[i])
 
-    ax.set_xticks(x + width * 1.5)
-    ax.set_xticklabels(configs, rotation=15, ha="right")
-    ax.set_ylabel("Recall (%)")
-    ax.set_title("Per-Class Recall by Configuration")
-    ax.legend()
-    ax.set_ylim(0, 110)
-    ax.axhline(100, color="gray", linestyle="--", linewidth=0.8)
+        ax.set_xticks(x + width * 1.5)
+        ax.set_xticklabels([c.upper().replace("_", " ") for c in configs], rotation=0, ha="center")
+        ax.set_ylabel("Recall (%)", fontsize=11)
+        ax.set_title(f"Per-Class Recall by Configuration ({model_type.upper()}-UE v4)", fontsize=12, fontweight="bold")
+        ax.legend(loc="lower left")
+        ax.set_ylim(0, 115)
+        ax.axhline(100, color="gray", linestyle="--", linewidth=0.8)
+        ax.grid(True, alpha=0.3, axis='y')
 
-    plt.tight_layout()
-    path = os.path.join(output_dir, "eval_per_class.png")
-    plt.savefig(path, dpi=150, bbox_inches="tight")
-    plt.close()
-    print(f"[FIG] {path}")
+        plt.tight_layout()
+        path = os.path.join(output_dir, f"eval_per_class_{model_type}.png")
+        plt.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close()
+        print(f"[FIG] {path}")
 
 
 def plot_latency(results: dict, output_dir: str) -> None:
     plt = _ensure_matplotlib()
-    configs = ["rule_only", "lstm_only", "gru_only", "lstm_hybrid", "gru_hybrid"]
     classes = ["ul_flood", "dl_flood", "burst", "roq"]
     class_labels = ["UL Flood", "DL Flood", "Burst", "RoQ"]
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5))
+    for model_type in ["lstm", "gru"]:
+        configs = ["rule_only", f"{model_type}_only", f"{model_type}_hybrid"]
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5.5))
 
-    x = np.arange(len(configs))
-    width = 0.18
-    for i, (cls, clbl) in enumerate(zip(classes, class_labels)):
-        vals = []
-        for cfg in configs:
-            lat = results[cfg].get("detection_latency", {}).get(cls, {})
-            vals.append(lat.get("mean_s") or 0.0)
-        ax1.bar(x + i * width, vals, width, label=clbl)
-    ax1.set_xticks(x + width * 1.5)
-    ax1.set_xticklabels(configs, rotation=15, ha="right")
-    ax1.set_ylabel("Mean Detection Latency (s)")
-    ax1.set_title("Detection Latency by Configuration")
-    ax1.legend()
+        # Subplot 1: Detection Latency
+        x = np.arange(len(configs))
+        width = 0.18
+        colors = ['#1f77b4', '#aec7e8', '#ff7f0e', '#ffbb78'] if model_type == "lstm" else ['#2ca02c', '#98df8a', '#d62728', '#ff9896']
+        for i, (cls, clbl) in enumerate(zip(classes, class_labels)):
+            vals = []
+            for cfg in configs:
+                lat = results[cfg].get("detection_latency", {}).get(cls, {})
+                vals.append(lat.get("mean_s") or 0.0)
+            ax1.bar(x + i * width, vals, width, label=clbl, color=colors[i])
+        ax1.set_xticks(x + width * 1.5)
+        ax1.set_xticklabels([c.upper().replace("_", " ") for c in configs])
+        ax1.set_ylabel("Mean Detection Latency (s)", fontsize=11)
+        ax1.set_title("Detection Latency by Configuration", fontsize=11.5, fontweight="bold")
+        ax1.legend()
+        ax1.grid(True, alpha=0.3, axis='y')
 
-    ml_cfgs = ["lstm_only", "gru_only", "lstm_hybrid", "gru_hybrid"]
-    means = []; p95s = []; xlbls = []
-    for cfg in ml_cfgs:
-        il = results.get(cfg, {}).get("inference_latency")
-        if il and il.get("mean_ms") is not None:
-            means.append(il["mean_ms"])
-            p95s.append(il["p95_ms"])
-            xlbls.append(cfg)
-    if means:
-        xp = np.arange(len(xlbls))
-        ax2.bar(xp - 0.2, means, 0.35, label="Mean")
-        ax2.bar(xp + 0.2, p95s,  0.35, label="P95", alpha=0.7)
-        ax2.set_xticks(xp)
-        ax2.set_xticklabels(xlbls, rotation=15, ha="right")
-        ax2.set_ylabel("Inference Latency (ms / window)")
-        ax2.set_title("Inference Latency (ML Configurations)")
-        ax2.legend()
-    else:
-        ax2.text(0.5, 0.5, "No ML inference data", ha="center", va="center",
-                 transform=ax2.transAxes)
+        # Subplot 2: Inference Latency
+        ml_cfgs = [f"{model_type}_only", f"{model_type}_hybrid"]
+        means = []; p95s = []; xlbls = []
+        for cfg in ml_cfgs:
+            il = results.get(cfg, {}).get("inference_latency")
+            if il and il.get("mean_ms") is not None:
+                means.append(il["mean_ms"])
+                p95s.append(il["p95_ms"])
+                xlbls.append(cfg.upper().replace("_", " "))
 
-    plt.tight_layout()
-    path = os.path.join(output_dir, "eval_latency.png")
-    plt.savefig(path, dpi=150, bbox_inches="tight")
-    plt.close()
-    print(f"[FIG] {path}")
+        if means:
+            xp = np.arange(len(xlbls))
+            color_mean = '#2196F3' if model_type == "lstm" else '#4CAF50'
+            color_p95  = '#FF9800' if model_type == "lstm" else '#FF5722'
+            ax2.bar(xp - 0.2, means, 0.35, label="Mean", color=color_mean)
+            ax2.bar(xp + 0.2, p95s,  0.35, label="P95", color=color_p95, alpha=0.7)
+            ax2.set_xticks(xp)
+            ax2.set_xticklabels(xlbls)
+            ax2.set_ylabel("Inference Latency (ms / window)", fontsize=11)
+            ax2.set_title("Inference Latency", fontsize=11.5, fontweight="bold")
+            ax2.legend()
+            ax2.grid(True, alpha=0.3, axis='y')
+        else:
+            ax2.text(0.5, 0.5, "No ML inference data", ha="center", va="center",
+                     transform=ax2.transAxes)
+
+        plt.tight_layout()
+        path = os.path.join(output_dir, f"eval_latency_{model_type}.png")
+        plt.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close()
+        print(f"[FIG] {path}")
 
 
 def plot_roc(roc_data: dict, results: dict, output_dir: str) -> None:
-    """
-    roc_data: {'lstm': (fpr_arr, tpr_arr, auc), 'gru': (...)}
-    rule operating point taken from results['rule_only']
-    """
     plt = _ensure_matplotlib()
-    fig, ax = plt.subplots(figsize=(7, 6))
-
     colors = {"lstm": "steelblue", "gru": "darkorange"}
-    for key, (fpr, tpr, auc_v) in roc_data.items():
-        label = f"{key.upper()}-UE v1 (AUC={auc_v:.3f})"
-        ax.plot(fpr, tpr, color=colors.get(key, "gray"), lw=2, label=label)
+    for model_type in ["lstm", "gru"]:
+        fig, ax = plt.subplots(figsize=(7, 6))
 
-    rule = results.get("rule_only", {})
-    if rule:
-        cm   = rule["confusion_matrix"]
-        fpr_r = cm["fp"] / (cm["fp"] + cm["tn"]) if (cm["fp"] + cm["tn"]) > 0 else 0
-        tpr_r = rule["recall"]
-        ax.plot(fpr_r, tpr_r, marker="*", markersize=14, color="red",
-                label=f"Rule-only (FPR={fpr_r*100:.1f}%, TPR={tpr_r*100:.1f}%)",
-                linestyle="None")
+        fpr, tpr, auc_v = roc_data[model_type]
+        label = f"{model_type.upper()}-UE v4 (AUC={auc_v:.3f})"
+        ax.plot(fpr, tpr, color=colors.get(model_type, "gray"), lw=2.2, label=label)
 
-    ax.plot([0, 1], [0, 1], "k--", lw=0.8, label="Random")
-    ax.set_xlabel("False Positive Rate")
-    ax.set_ylabel("True Positive Rate (Recall)")
-    ax.set_title("ROC Curve — Per-UE IDS")
-    ax.legend(loc="lower right")
-    ax.set_xlim([0, 1]); ax.set_ylim([0, 1.02])
-    ax.grid(True, alpha=0.3)
+        rule = results.get("rule_only", {})
+        if rule:
+            cm   = rule["confusion_matrix"]
+            fpr_r = cm["fp"] / (cm["fp"] + cm["tn"]) if (cm["fp"] + cm["tn"]) > 0 else 0
+            tpr_r = rule["recall"]
+            ax.plot(fpr_r, tpr_r, marker="*", markersize=14, color="red",
+                    label=f"Rule-only (FPR={fpr_r*100:.1f}%, TPR={tpr_r*100:.1f}%)",
+                    linestyle="None")
+
+        ax.plot([0, 1], [0, 1], "k--", lw=0.8, label="Random")
+        ax.set_xlabel("False Positive Rate", fontsize=11)
+        ax.set_ylabel("True Positive Rate (Recall)", fontsize=11)
+        ax.set_title(f"ROC Curve — {model_type.upper()}-UE v4", fontsize=12, fontweight="bold")
+        ax.legend(loc="lower right")
+        ax.set_xlim([-0.02, 1.02]); ax.set_ylim([-0.02, 1.02])
+        ax.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        path = os.path.join(output_dir, f"eval_roc_{model_type}.png")
+        plt.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close()
+        print(f"[FIG] {path}")
+
+
+def plot_reconstruction_error_dist(
+    val_lstm_mse: np.ndarray,
+    lmse_pos: np.ndarray,
+    thresh_lstm: float,
+    val_gru_mse: np.ndarray,
+    gmse_pos: np.ndarray,
+    thresh_gru: float,
+    output_dir: str,
+    train_lstm_mse: np.ndarray = None,
+    train_gru_mse: np.ndarray = None,
+) -> None:
+    plt = _ensure_matplotlib()
+    bins = 100
+
+    # 1. LSTM Plot
+    fig, ax1 = plt.subplots(figsize=(8, 5.5))
+    xlim_lstm = float(np.percentile(np.concatenate([val_lstm_mse, lmse_pos]), 99.0)) * 1.15
+    if train_lstm_mse is not None and len(train_lstm_mse) > 0:
+        ax1.hist(train_lstm_mse, bins=bins, range=(0, xlim_lstm), color='#2196F3', alpha=0.4, density=True,
+                 label=f'Train Normal (n={len(train_lstm_mse):,})')
+    ax1.hist(val_lstm_mse, bins=bins, range=(0, xlim_lstm), color='#4CAF50', alpha=0.55, density=True,
+             label=f'Val Normal (n={len(val_lstm_mse):,})')
+    ax1.hist(lmse_pos, bins=bins, range=(0, xlim_lstm), color='#F44336', alpha=0.5, density=True,
+             label=f'Attack/DoS (n={len(lmse_pos):,})')
+    ax1.axvline(thresh_lstm, color='#E91E63', linestyle='--', linewidth=2.0,
+                label=f'Threshold = {thresh_lstm:.6f}')
+    ax1.axvspan(0, thresh_lstm, alpha=0.05, color='#4CAF50')
+    ax1.set_xlabel('Weighted Reconstruction Error (MSE)', fontsize=10.5)
+    ax1.set_ylabel('Density', fontsize=10.5)
+    ax1.set_title('LSTM-UE v4 Reconstruction Error Distribution', fontsize=12, fontweight='bold')
+    ax1.legend(fontsize=9, loc='upper right')
+    ax1.grid(True, alpha=0.3)
+    ax1.set_xlim(0, xlim_lstm)
 
     plt.tight_layout()
-    path = os.path.join(output_dir, "eval_roc.png")
-    plt.savefig(path, dpi=150, bbox_inches="tight")
+    path_lstm = os.path.join(output_dir, "eval_reconstruction_error_lstm.png")
+    plt.savefig(path_lstm, dpi=150, bbox_inches="tight")
     plt.close()
-    print(f"[FIG] {path}")
+    print(f"[FIG] {path_lstm}")
+
+    # 2. GRU Plot
+    fig, ax2 = plt.subplots(figsize=(8, 5.5))
+    xlim_gru = float(np.percentile(np.concatenate([val_gru_mse, gmse_pos]), 99.0)) * 1.15
+    if train_gru_mse is not None and len(train_gru_mse) > 0:
+        ax2.hist(train_gru_mse, bins=bins, range=(0, xlim_gru), color='#2196F3', alpha=0.4, density=True,
+                 label=f'Train Normal (n={len(train_gru_mse):,})')
+    ax2.hist(val_gru_mse, bins=bins, range=(0, xlim_gru), color='#FF9800', alpha=0.55, density=True,
+             label=f'Val Normal (n={len(val_gru_mse):,})')
+    ax2.hist(gmse_pos, bins=bins, range=(0, xlim_gru), color='#F44336', alpha=0.5, density=True,
+             label=f'Attack/DoS (n={len(gmse_pos):,})')
+    ax2.axvline(thresh_gru, color='#E91E63', linestyle='--', linewidth=2.0,
+                label=f'Threshold = {thresh_gru:.6f}')
+    ax2.axvspan(0, thresh_gru, alpha=0.05, color='#2196F3')
+    ax2.set_xlabel('Weighted Reconstruction Error (MSE)', fontsize=10.5)
+    ax2.set_ylabel('Density', fontsize=10.5)
+    ax2.set_title('GRU-UE v4 Reconstruction Error Distribution', fontsize=12, fontweight='bold')
+    ax2.legend(fontsize=9, loc='upper right')
+    ax2.grid(True, alpha=0.3)
+    ax2.set_xlim(0, xlim_gru)
+
+    plt.tight_layout()
+    path_gru = os.path.join(output_dir, "eval_reconstruction_error_gru.png")
+    plt.savefig(path_gru, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"[FIG] {path_gru}")
 
 
 # ── Section 7: CLI + main ─────────────────────────────────────────────────────
@@ -623,6 +742,7 @@ def _pool_per_rnti(by_rnti: dict, models: dict, thresh_lstm: float, thresh_gru: 
             print(f"  [SKIP] RNTI {rnti}: only {N} rows (< {SEQ_LEN})")
             continue
 
+        add_burst_features_rows(rows)
         X    = extract_features(rows)
         lbls = get_labels(rows)
         ts   = get_timestamps_ms(rows)
@@ -676,16 +796,55 @@ def main():
     ap = argparse.ArgumentParser(description="Per-UE IDS evaluation — 5 configs")
     ap.add_argument("--val",    default="csv/dataset_validation_ue_juni.csv")
     ap.add_argument("--attack", default="csv/dataset_attack_ue_juni.csv")
+    ap.add_argument("--train",  default=None, help="Optional training dataset (e.g. csv/dataset_training_ue_juni.csv)")
     ap.add_argument("--output", default="results/")
     ap.add_argument("--save-figures", action="store_true")
+    
+    # Model overrides
+    ap.add_argument("--lstm-model", default="models/lstm_ue_v4.pt")
+    ap.add_argument("--lstm-scaler", default="models/lstm_ue_v4_scaler.pkl")
+    ap.add_argument("--lstm-threshold", default="models/lstm_ue_v4_threshold.json")
+    ap.add_argument("--gru-model", default="models/gru_ue_v4.pt")
+    ap.add_argument("--gru-scaler", default="models/gru_ue_v4_scaler.pkl")
+    ap.add_argument("--gru-threshold", default="models/gru_ue_v4_threshold.json")
+    
     args = ap.parse_args()
 
     os.makedirs(args.output, exist_ok=True)
 
     # ── Load models ───────────────────────────────────────────────────────────
-    models = load_models()
-    _, _, thresh_lstm = models["lstm"]
-    _, _, thresh_gru  = models["gru"]
+    models = load_models(
+        lstm_pt=args.lstm_model,
+        lstm_pkl=args.lstm_scaler,
+        lstm_json=args.lstm_threshold,
+        gru_pt=args.gru_model,
+        gru_pkl=args.gru_scaler,
+        gru_json=args.gru_threshold,
+    )
+    # Thresholds from training JSON are calibrated on uniform MSE; we recompute
+    # P97 on weighted validation scores below after the validation loop.
+
+    # ── Optional training dataset ─────────────────────────────────────────────
+    train_lstm_mse = None
+    train_gru_mse = None
+    if args.train:
+        print(f"\n[*] Processing optional training dataset: {args.train}")
+        train_rows = load_csv(args.train)
+        preprocess_rows(train_rows)
+        train_by_rnti = split_by_rnti(train_rows)
+        train_lstm_mse_all = []
+        train_gru_mse_all = []
+        for rnti, rows in sorted(train_by_rnti.items()):
+            if len(rows) < SEQ_LEN:
+                continue
+            add_burst_features_rows(rows)
+            X = extract_features(rows)
+            lstm_mse, _ = score_ml(models["lstm"][0], models["lstm"][1], X)
+            gru_mse,  _ = score_ml(models["gru"][0],  models["gru"][1],  X)
+            train_lstm_mse_all.append(lstm_mse)
+            train_gru_mse_all.append(gru_mse)
+        train_lstm_mse = np.concatenate(train_lstm_mse_all) if train_lstm_mse_all else np.array([], dtype=np.float32)
+        train_gru_mse  = np.concatenate(train_gru_mse_all)  if train_gru_mse_all  else np.array([], dtype=np.float32)
 
     # ── Validation dataset (FPR only) ─────────────────────────────────────────
     print(f"\n[1/4] Validation dataset: {args.val}")
@@ -700,6 +859,7 @@ def main():
     for rnti, rows in sorted(val_by_rnti.items()):
         if len(rows) < SEQ_LEN:
             continue
+        add_burst_features_rows(rows)
         X = extract_features(rows)
         rule_f = run_rule_engine(X)[SEQ_LEN - 1:]
         lstm_mse, _ = score_ml(models["lstm"][0], models["lstm"][1], X)
@@ -711,6 +871,11 @@ def main():
     val_rule_fires = np.concatenate(val_rule_fires_all) if val_rule_fires_all else np.array([], dtype=bool)
     val_lstm_mse   = np.concatenate(val_lstm_mse_all)   if val_lstm_mse_all   else np.array([], dtype=np.float32)
     val_gru_mse    = np.concatenate(val_gru_mse_all)    if val_gru_mse_all    else np.array([], dtype=np.float32)
+
+    # Recalibrate thresholds on weighted validation scores (P97)
+    thresh_lstm = float(np.percentile(val_lstm_mse, 97)) if len(val_lstm_mse) > 0 else 0.0
+    thresh_gru  = float(np.percentile(val_gru_mse,  97)) if len(val_gru_mse)  > 0 else 0.0
+    print(f"    Weighted P97 thresholds — lstm:{thresh_lstm:.6f}  gru:{thresh_gru:.6f}")
 
     n_val = len(val_rule_fires)
     fpr_rule_val = compute_fpr_val(val_rule_fires, n_val)
@@ -813,6 +978,17 @@ def main():
         plot_per_class(results, args.output)
         plot_latency(results, args.output)
         plot_roc(roc_data, results, args.output)
+        plot_reconstruction_error_dist(
+            val_lstm_mse = val_lstm_mse,
+            lmse_pos     = lmse_pos,
+            thresh_lstm  = thresh_lstm,
+            val_gru_mse  = val_gru_mse,
+            gmse_pos     = gmse_pos,
+            thresh_gru   = thresh_gru,
+            output_dir   = args.output,
+            train_lstm_mse = train_lstm_mse,
+            train_gru_mse  = train_gru_mse,
+        )
 
 
 if __name__ == "__main__":

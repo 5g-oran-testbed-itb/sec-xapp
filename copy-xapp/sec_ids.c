@@ -15,7 +15,21 @@ static uint64_t g_period_ms = 100;
 static int g_ul_sat_cnt      = 0;   /* ul_saturation consecutive windows */
 static int g_dl_sat_cnt      = 0;   /* dl_saturation consecutive windows */
 static int g_sig_storm_cnt   = 0;   /* signaling storm (Rule 2) */
-static int g_empty_storm_cnt = 0;   /* RRC storm via empty indications (Rule 3b) */
+static int g_empty_storm_cnt    = 0;   /* RRC storm via empty indications (Rule 3b) */
+static int g_rach_sustained_cnt = 0;   /* RRC storm via sustained RACH activity (Rule 3c) */
+
+/* ─── Rule 3d: CQI rolling buffer untuk oscillation detection ────────────── */
+#define CQI_HIST 10
+static float g_cqi_hist[CQI_HIST] = {0};
+static int   g_cqi_hist_head      = 0;
+static int   g_cqi_hist_count     = 0;
+
+/* ─── Rule 3e: RRC storm persistence window ──────────────────────────────── */
+#define RRC_TRIGGER_HIST 8
+static long long g_rrc_trigger_times[RRC_TRIGGER_HIST] = {0};
+static int       g_rrc_trigger_head  = 0;
+static int       g_rrc_trigger_count = 0;
+static long long g_rrc_storm_until   = 0;   /* ms — storm window aktif sampai */
 static int g_rf_susp_cnt     = 0;   /* radio_degradation_suspicion (R7) consecutive */
 static int g_rlc_ul_flood_cnt = 0;
 static int g_rlc_dl_flood_cnt = 0;
@@ -71,7 +85,15 @@ void ids_reset(void)
     g_ul_sat_cnt       = 0;
     g_dl_sat_cnt       = 0;
     g_sig_storm_cnt    = 0;
-    g_empty_storm_cnt  = 0;
+    g_empty_storm_cnt    = 0;
+    g_rach_sustained_cnt = 0;
+    g_cqi_hist_head      = 0;
+    g_cqi_hist_count     = 0;
+    g_rrc_trigger_head   = 0;
+    g_rrc_trigger_count  = 0;
+    g_rrc_storm_until    = 0;
+    memset(g_cqi_hist,         0, sizeof(g_cqi_hist));
+    memset(g_rrc_trigger_times, 0, sizeof(g_rrc_trigger_times));
     g_rf_susp_cnt      = 0;
     g_rlc_ul_flood_cnt = 0;
     g_rlc_dl_flood_cnt = 0;
@@ -201,15 +223,15 @@ int rule_based_detect(cell_metrics_t const* m, long long now_ms)
         }
     }
 
-    /* ── Rule 3b: RRC Storm via Empty Indications — Stage 1 + Stage 2 ──────
-     * Stage 2 threshold: g_cfg_rrc_storm_confirm_win (default 4) windows. */
+    /* ── Rule 3b: RRC Storm via Empty Indications — Stage 1 ────────────────
+     * empty_ind_rate >= 2 AND low PRB → airplane toggle / UE churn pattern. */
     {
-        if (m->empty_ind_rate >= 2.0f && m->prb_used_ul < 30.0f && m->prb_used_dl < 30.0f) {
+        int cond_3b = (m->empty_ind_rate >= 2.0f
+                       && m->prb_used_ul < 30.0f && m->prb_used_dl < 30.0f);
+        if (cond_3b) {
             g_empty_storm_cnt++;
-            g_stage2_rrc_storm_cnt++;
         } else {
             g_empty_storm_cnt = 0;
-            g_stage2_rrc_storm_cnt = 0;
         }
         if (g_empty_storm_cnt >= 3) {
             printf(">>> [STAGE1-WARNING] RRC_STORM (UE churn) | empty_ind=%.0f/window "
@@ -221,6 +243,92 @@ int rule_based_detect(cell_metrics_t const* m, long long now_ms)
                 alert_type = ALERT_RRC_STORM;
             }
             if (severity < 1) severity = 1;
+        }
+
+        /* ── Rule 3c: RRC Storm via Sustained RACH Activity ─────────────────
+         * Airplane toggle dan RRC flood menghasilkan RACH preamble berulang
+         * (>=1 per window) tanpa saturasi PRB — berbeda dari UL/DL Flood.
+         * Counter 2 window (200ms) cukup karena RACH tersebar merata saat storm. */
+        int cond_3c = (m->rach_preamble >= 1.0f
+                       && m->prb_used_ul < 30.0f && m->prb_used_dl < 30.0f);
+        if (cond_3c) {
+            g_rach_sustained_cnt++;
+        } else {
+            g_rach_sustained_cnt = 0;
+        }
+        if (g_rach_sustained_cnt >= 2) {
+            printf(">>> [STAGE1-WARNING] RRC_STORM (RACH sustained) | rach=%.0f "
+                   "selama %d windows (%.0fms) — UE reconnect storm\n",
+                   m->rach_preamble, g_rach_sustained_cnt,
+                   g_rach_sustained_cnt * (float)g_period_ms);
+            if (!stage1_hit) {
+                stage1_hit = 1;
+                alert_type = ALERT_RRC_STORM;
+            }
+            if (severity < 1) severity = 1;
+        }
+
+        /* ── Rule 3d: CQI Oscillation — UE repeatedly disconnect/reconnect ────
+         * Selama RRC Storm, CQI bolak-balik antara 0 (disconnected) dan tinggi.
+         * Rolling std CQI > 3.0 dengan PRB total < 5% = sinyal kuat storm. */
+        g_cqi_hist[g_cqi_hist_head] = m->cqi;
+        g_cqi_hist_head = (g_cqi_hist_head + 1) % CQI_HIST;
+        if (g_cqi_hist_count < CQI_HIST) g_cqi_hist_count++;
+        float cqi_sum = 0.0f;
+        for (int i = 0; i < g_cqi_hist_count; i++) cqi_sum += g_cqi_hist[i];
+        float cqi_mean = cqi_sum / (float)g_cqi_hist_count;
+        float cqi_sq   = 0.0f;
+        for (int i = 0; i < g_cqi_hist_count; i++)
+            cqi_sq += (g_cqi_hist[i] - cqi_mean) * (g_cqi_hist[i] - cqi_mean);
+        float cqi_std = sqrtf(cqi_sq / (float)g_cqi_hist_count);
+        float prb_total = m->prb_used_dl + m->prb_used_ul;
+        int cond_3d = (cqi_std > 3.0f && prb_total < 5.0f);
+        if (cond_3d) {
+            printf(">>> [STAGE1-WARNING] RRC_STORM (CQI oscillation) | cqi_std=%.2f "
+                   "prb_total=%.1f%% — repeated UE disconnect/reconnect\n",
+                   cqi_std, prb_total);
+            if (!stage1_hit) {
+                stage1_hit = 1;
+                alert_type = ALERT_RRC_STORM;
+            }
+            if (severity < 1) severity = 1;
+        }
+
+        /* ── Rule 3e: RRC Storm Persistence Window ───────────────────────────
+         * Setelah >= 2 trigger (3b/3c/3d) dalam 3s, pertahankan alert 5s.
+         * Menangkap periode "diam" antar burst RACH/empty_ind. */
+        if (cond_3b || cond_3c || cond_3d) {
+            /* Evict triggers lebih dari 3s yang lalu */
+            int valid = 0;
+            for (int i = 0; i < g_rrc_trigger_count; i++) {
+                int idx = (g_rrc_trigger_head - g_rrc_trigger_count + i
+                           + RRC_TRIGGER_HIST) % RRC_TRIGGER_HIST;
+                if (now_ms - g_rrc_trigger_times[idx] <= 3000)
+                    valid++;
+            }
+            /* Tambah trigger baru */
+            g_rrc_trigger_times[g_rrc_trigger_head] = now_ms;
+            g_rrc_trigger_head = (g_rrc_trigger_head + 1) % RRC_TRIGGER_HIST;
+            if (g_rrc_trigger_count < RRC_TRIGGER_HIST) g_rrc_trigger_count++;
+            if (valid + 1 >= 2) {
+                if (now_ms + 5000 > g_rrc_storm_until)
+                    g_rrc_storm_until = now_ms + 5000;
+            }
+        }
+        int cond_3e = (g_rrc_storm_until > 0 && now_ms <= g_rrc_storm_until);
+        if (cond_3e) {
+            if (!stage1_hit) {
+                stage1_hit = 1;
+                alert_type = ALERT_RRC_STORM;
+            }
+            if (severity < 1) severity = 1;
+        }
+
+        /* Stage 2: increment jika salah satu kondisi 3b/3c/3d/3e aktif */
+        if (cond_3b || cond_3c || cond_3d || cond_3e) {
+            g_stage2_rrc_storm_cnt++;
+        } else {
+            g_stage2_rrc_storm_cnt = 0;
         }
         if (g_stage2_rrc_storm_cnt >= g_cfg_rrc_storm_confirm_win) {
             printf(">>> [STAGE2-CRITICAL] RRC_STORM CONFIRMED | %d windows consecutive\n",

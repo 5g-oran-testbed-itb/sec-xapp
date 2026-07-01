@@ -1,0 +1,85 @@
+<h2>Bagaimana tampilan overlay mitigasi?</h2>
+<p class="subtitle">Pilih style untuk menandai kapan throttle aktif di atas grafik PRB DL/UL</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Background Shading</h3>
+      <p>Area di belakang grafik diwarnai saat stage aktif. Kuning = Warning, Merah = Critical/Throttle.</p>
+      <div style="margin-top:10px; background:#111; border-radius:6px; padding:12px; position:relative; height:80px; overflow:hidden;">
+        <!-- Background shading zones -->
+        <div style="position:absolute; left:45%; top:0; width:15%; height:100%; background:rgba(255,200,0,0.15); border-left:1px solid rgba(255,200,0,0.4);"></div>
+        <div style="position:absolute; left:60%; top:0; width:20%; height:100%; background:rgba(220,50,50,0.2); border-left:1px solid rgba(220,50,50,0.5);"></div>
+        <!-- PRB DL line -->
+        <svg style="position:absolute; top:0; left:0; width:100%; height:100%;" viewBox="0 0 300 80" preserveAspectRatio="none">
+          <polyline points="0,20 60,18 90,15 135,14 150,16 180,18 195,70 210,72 240,68 270,30 300,25"
+            fill="none" stroke="#7ec8e3" stroke-width="2"/>
+          <polyline points="0,65 60,63 90,67 135,65 150,64 180,62 195,60 210,58 240,62 270,60 300,61"
+            fill="none" stroke="#51cf66" stroke-width="2" stroke-dasharray="4 2"/>
+        </svg>
+        <div style="position:absolute; top:4px; right:8px; font-size:9px; color:#7ec8e3;">— PRB DL</div>
+        <div style="position:absolute; top:16px; right:8px; font-size:9px; color:#51cf66;">-- PRB UL</div>
+        <div style="position:absolute; bottom:4px; left:46%; font-size:8px; color:#ffc107;">WARN</div>
+        <div style="position:absolute; bottom:4px; left:61%; font-size:8px; color:#ff6b6b;">CRITICAL</div>
+      </div>
+      <div class="pros-cons" style="margin-top:8px;">
+        <div class="pros"><h4>Pro</h4><ul><li>Paling mudah dibaca sekilas</li><li>Support native di Grafana via Threshold + Override</li></ul></div>
+        <div class="cons"><h4>Kekurangan</h4><ul><li>Butuh metric stage di panel yang sama</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Step Line (Dual Axis)</h3>
+      <p>Detection Stage (0/1/2) ditampilkan sebagai garis step di axis kanan. PRB DL/UL di axis kiri.</p>
+      <div style="margin-top:10px; background:#111; border-radius:6px; padding:12px; position:relative; height:80px; overflow:hidden;">
+        <svg style="position:absolute; top:0; left:0; width:100%; height:100%;" viewBox="0 0 300 80" preserveAspectRatio="none">
+          <!-- PRB lines -->
+          <polyline points="0,20 60,18 90,15 135,14 150,16 180,18 200,70 220,72 240,68 270,30 300,25"
+            fill="none" stroke="#7ec8e3" stroke-width="2"/>
+          <polyline points="0,65 60,63 90,67 135,65 150,64 180,62 200,60 220,58 240,62 270,60 300,61"
+            fill="none" stroke="#51cf66" stroke-width="2"/>
+          <!-- Stage step line (right axis, 0=bottom, 2=top) -->
+          <polyline points="0,78 150,78 150,52 180,52 180,26 220,26 220,78 300,78"
+            fill="none" stroke="#ff6b6b" stroke-width="1.5" stroke-dasharray="3 2"/>
+        </svg>
+        <div style="position:absolute; top:4px; right:8px; font-size:9px; color:#ff6b6b;">-- Stage (0-2)</div>
+        <div style="position:absolute; top:4px; left:8px; font-size:9px; color:#7ec8e3;">— PRB DL/UL</div>
+      </div>
+      <div class="pros-cons" style="margin-top:8px;">
+        <div class="pros"><h4>Pro</h4><ul><li>Pakai metric <code>xapp_detection_stage</code> yang sudah ada</li><li>Tidak butuh metric baru sama sekali</li></ul></div>
+        <div class="cons"><h4>Kekurangan</h4><ul><li>Dual axis bisa membingungkan</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Kombinasi: Shading + Step Line</h3>
+      <p>Background merah saat Critical, ditambah garis step stage di bawah sebagai mini-panel terpisah (bukan dual axis).</p>
+      <div style="margin-top:10px; background:#111; border-radius:6px; padding:8px; font-size:10px;">
+        <div style="border:1px solid #333; border-radius:4px; padding:8px; margin-bottom:6px; position:relative; height:50px; overflow:hidden;">
+          <div style="position:absolute; left:60%; top:0; width:20%; height:100%; background:rgba(220,50,50,0.2);"></div>
+          <svg style="position:absolute; top:0; left:0; width:100%; height:100%;" viewBox="0 0 300 50" preserveAspectRatio="none">
+            <polyline points="0,12 90,10 150,10 180,11 200,44 220,45 240,42 270,18 300,15" fill="none" stroke="#7ec8e3" stroke-width="2"/>
+          </svg>
+          <div style="position:absolute; top:2px; left:4px; font-size:8px; color:#aaa;">PRB DL/UL</div>
+        </div>
+        <div style="border:1px solid #333; border-radius:4px; padding:4px; height:20px; position:relative; overflow:hidden;">
+          <svg style="position:absolute; top:0; left:0; width:100%; height:100%;" viewBox="0 0 300 20" preserveAspectRatio="none">
+            <polyline points="0,20 150,20 150,13 180,13 180,6 220,6 220,20 300,20" fill="none" stroke="#ff9f43" stroke-width="2"/>
+          </svg>
+          <div style="position:absolute; top:2px; left:4px; font-size:7px; color:#aaa;">Stage</div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:8px;">
+        <div class="pros"><h4>Pro</h4><ul><li>Paling informatif, tidak ada ambiguity</li><li>Bagus untuk thesis/demo screenshot</li></ul></div>
+        <div class="cons"><h4>Kekurangan</h4><ul><li>2 panel (lebih banyak space di dashboard)</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

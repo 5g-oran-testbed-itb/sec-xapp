@@ -1,0 +1,12 @@
+{
+  "mu": 0.0006022101151756942,
+  "sigma": 0.0007171275792643428,
+  "threshold": 0.0015678261406719685,
+  "percentile": 97.0,
+  "fpr_pct": 2.729330315537212,
+  "source": "validation_set",
+  "scoring": "per_feature_max",
+  "feat_percentile": 95.0,
+  "global_cal": 1.0365580320358276,
+  "fpr_val_actual": 1.0051923845027293
+}

@@ -323,7 +323,8 @@ class LSTMDetector:
     _ROLL30 = 30
     _ROLL10 = 10
 
-    def __init__(self, model_path, threshold=LSTM_THRESH, seq_len=WINDOW_SIZE, num_features=None):
+    def __init__(self, model_path, threshold=LSTM_THRESH, seq_len=WINDOW_SIZE,
+                 num_features=None, score_smooth_n=1, min_consec=3):
         self.sess      = ort.InferenceSession(model_path)
         self.threshold = threshold
         self.seq_len   = seq_len
@@ -337,11 +338,16 @@ class LSTMDetector:
         self.stage2_dur_ms    = 0
         self.severity         = 0
         self.last_score       = 0.0
+        self.last_score_raw   = 0.0
         self._rach_buf    = np.zeros(self._ROLL30, dtype=np.float32)
         self._empty_buf   = np.zeros(self._ROLL30, dtype=np.float32)
         self._ul_buf      = np.zeros(self._ROLL10, dtype=np.float32)
         self._roll_filled = 0
         self._ul_filled   = 0
+        # score smoothing
+        self._smooth_n    = max(1, score_smooth_n)
+        self._score_buf   = np.zeros(self._smooth_n, dtype=np.float32)
+        self._min_consec  = min_consec
 
     def update(self, row, now_ms):
         # update rolling buffers
@@ -368,7 +374,13 @@ class LSTMDetector:
             return 0, 0.0
 
         inp = self.window[np.newaxis].astype(np.float32)
-        score = float(self.sess.run(["score"], {"input": inp})[0][0])
+        score_raw = float(self.sess.run(["score"], {"input": inp})[0][0])
+        self.last_score_raw = score_raw
+
+        # Rolling mean smoothing — reduces transient spikes in normal traffic
+        self._score_buf = np.roll(self._score_buf, -1)
+        self._score_buf[-1] = score_raw
+        score = float(self._score_buf.mean())
         self.last_score = score
 
         # Context-aware threshold: jika cell sedang "quiet" (PRB total rendah,
@@ -390,7 +402,7 @@ class LSTMDetector:
             self.stage2_dur_ms   = 0
 
         sev = 0
-        if self.anomaly_cnt >= 3:
+        if self.anomaly_cnt >= self._min_consec:
             sev = 1
         if self.stage2_dur_ms >= 30000:
             sev = 2
@@ -416,30 +428,33 @@ class DualLSTMDetector:
     """
 
     def __init__(self, model_a, thresh_a, model_b, thresh_b,
-                 seq_len=WINDOW_SIZE, num_features=None):
+                 seq_len=WINDOW_SIZE, num_features=None,
+                 score_smooth_n=1, min_consec=3):
         self.det_a   = LSTMDetector(model_a, threshold=thresh_a,
-                                    seq_len=seq_len, num_features=num_features)
+                                    seq_len=seq_len, num_features=num_features,
+                                    score_smooth_n=score_smooth_n, min_consec=min_consec)
         self.det_b   = LSTMDetector(model_b, threshold=thresh_b,
-                                    seq_len=seq_len, num_features=num_features)
-        self.thresh_a = thresh_a
-        self.thresh_b = thresh_b
-        self._buf_a   = [False, False, False]
-        self._buf_b   = [False, False, False]
+                                    seq_len=seq_len, num_features=num_features,
+                                    score_smooth_n=score_smooth_n, min_consec=min_consec)
+        self.thresh_a  = thresh_a
+        self.thresh_b  = thresh_b
+        self._min_consec = min_consec
+        self._cnt_a    = 0
+        self._cnt_b    = 0
 
     def update(self, row, now_ms):
         """
         Returns (severity, combined_score, score_a, score_b).
-        severity = 1 if either model votes anomaly, else 0.
-        combined_score = max(score_a, score_b).
+        severity = 1 if either model has >= min_consec consecutive smoothed
+        windows above its threshold.
         """
         _, score_a = self.det_a.update(row, now_ms)
         _, score_b = self.det_b.update(row, now_ms)
 
-        self._buf_a = self._buf_a[1:] + [score_a > self.thresh_a]
-        self._buf_b = self._buf_b[1:] + [score_b > self.thresh_b]
+        self._cnt_a = self._cnt_a + 1 if score_a > self.thresh_a else 0
+        self._cnt_b = self._cnt_b + 1 if score_b > self.thresh_b else 0
 
-        vote = _vote_2of3(self._buf_a) or _vote_2of3(self._buf_b)
-        sev  = 1 if vote else 0
+        sev = 1 if (self._cnt_a >= self._min_consec or self._cnt_b >= self._min_consec) else 0
         return sev, max(score_a, score_b), score_a, score_b
 
 
@@ -515,21 +530,24 @@ def load_csv(path):
 
 
 def run_evaluation(csv_path, onnx_path, output_path=None, seq_len=WINDOW_SIZE, num_features=None,
-                   dual=False, model_a=None, thresh_a=0.21, model_b=None, thresh_b=0.5):
+                   dual=False, model_a=None, thresh_a=0.21, model_b=None, thresh_b=0.5,
+                   score_smooth_n=1, min_consec=3):
     print(f"Loading dataset: {csv_path}")
     rows = load_csv(csv_path)
     print(f"  {len(rows)} rows, labels: { {int(l): sum(1 for r in rows if int(r['label'])==l) for l in sorted(set(int(r['label']) for r in rows))} }")
 
     ids = RuleBasedIDS()
     if dual:
-        print(f"\nDual-LSTM Ensemble  (seq_len={seq_len})")
+        print(f"\nDual-LSTM Ensemble  (seq_len={seq_len}  smooth={score_smooth_n}  min_consec={min_consec})")
         print(f"  Model A: {model_a}  thresh={thresh_a}")
         print(f"  Model B: {model_b}  thresh={thresh_b}")
         lstm = DualLSTMDetector(model_a, thresh_a, model_b, thresh_b,
-                                seq_len=seq_len, num_features=num_features)
+                                seq_len=seq_len, num_features=num_features,
+                                score_smooth_n=score_smooth_n, min_consec=min_consec)
     else:
         print(f"\nLoading ONNX model: {onnx_path}  (seq_len={seq_len})")
-        lstm = LSTMDetector(onnx_path, seq_len=seq_len, num_features=num_features)
+        lstm = LSTMDetector(onnx_path, seq_len=seq_len, num_features=num_features,
+                            score_smooth_n=score_smooth_n, min_consec=min_consec)
 
     labels      = []
     rule_sev    = []
@@ -713,11 +731,13 @@ if __name__ == "__main__":
     parser.add_argument("--seq-len",      default=WINDOW_SIZE,  type=int,   help="LSTM window size (default: 10)")
     parser.add_argument("--output",       default=None,                     help="Tulis hasil evaluasi ke JSON (opsional)")
     parser.add_argument("--num-features", default=None,          type=int,   help="Gunakan N fitur pertama (default: semua 27)")
-    parser.add_argument("--dual",         action="store_true",              help="Pakai DualLSTMDetector (model-a + model-b)")
-    parser.add_argument("--model-a",      default="security_model_v16.onnx", help="ONNX model A (default: v16)")
-    parser.add_argument("--thresh-a",     default=0.21,          type=float, help="Threshold model A (default: 0.21)")
-    parser.add_argument("--model-b",      default="security_model_v22.onnx", help="ONNX model B (default: v22)")
-    parser.add_argument("--thresh-b",     default=0.5,           type=float, help="Threshold model B (default: 0.5)")
+    parser.add_argument("--dual",           action="store_true",              help="Pakai DualLSTMDetector (model-a + model-b)")
+    parser.add_argument("--model-a",        default="security_model_v16.onnx", help="ONNX model A (default: v16)")
+    parser.add_argument("--thresh-a",       default=0.21,          type=float, help="Threshold model A (default: 0.21)")
+    parser.add_argument("--model-b",        default="security_model_v22.onnx", help="ONNX model B (default: v22)")
+    parser.add_argument("--thresh-b",       default=0.5,           type=float, help="Threshold model B (default: 0.5)")
+    parser.add_argument("--score-smooth-n", default=1,             type=int,   help="Rolling mean window untuk score smoothing (default: 1 = off)")
+    parser.add_argument("--min-consec",     default=3,             type=int,   help="Min consecutive anomaly windows sebelum flag (default: 3)")
     args = parser.parse_args()
     run_evaluation(
         args.csv, args.model,
@@ -727,4 +747,6 @@ if __name__ == "__main__":
         dual=args.dual,
         model_a=args.model_a, thresh_a=args.thresh_a,
         model_b=args.model_b, thresh_b=args.thresh_b,
+        score_smooth_n=args.score_smooth_n,
+        min_consec=args.min_consec,
     )

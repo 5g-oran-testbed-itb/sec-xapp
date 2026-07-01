@@ -1,0 +1,110 @@
+<h2>Tampilan Latency Deteksi & Mitigasi</h2>
+<p class="subtitle">Latency apa yang ingin ditampilkan, dan bagaimana tampilannya?</p>
+
+<div class="section" style="background:#1f2329; border-radius:6px; padding:12px; margin-bottom:16px; font-size:11px;">
+  <div style="color:#aaa; margin-bottom:8px;">📐 Definisi latency yang bisa dihitung dari data yang ada:</div>
+  <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;">
+    <div style="background:#111; border-radius:4px; padding:8px;">
+      <div style="color:#ffd43b; font-size:10px; margin-bottom:4px;">⏱ Detection Latency</div>
+      <div style="color:#fff; font-size:10px; font-weight:bold;">Stage 0 → Stage 1</div>
+      <div style="color:#aaa; font-size:9px;">~3 detik (rule-based fast path) atau ~3s (LSTM 3×window)</div>
+    </div>
+    <div style="background:#111; border-radius:4px; padding:8px;">
+      <div style="color:#ff9f43; font-size:10px; margin-bottom:4px;">⏱ Confirmation Latency</div>
+      <div style="color:#fff; font-size:10px; font-weight:bold;">Stage 1 → Stage 2</div>
+      <div style="color:#aaa; font-size:9px;">~5 detik (LSTM Stage2 window) atau langsung (rule fast-path)</div>
+    </div>
+    <div style="background:#111; border-radius:4px; padding:8px;">
+      <div style="color:#ff6b6b; font-size:10px; margin-bottom:4px;">⏱ Total Mitigation Time</div>
+      <div style="color:#fff; font-size:10px; font-weight:bold;">Attack → Throttle Aktif</div>
+      <div style="color:#aaa; font-size:9px;">= Detection + Confirmation latency (~3–8 detik)</div>
+    </div>
+  </div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Stat Panels: Current Stage Duration</h3>
+      <p>Dua stat baru di baris atas: <strong>"Stage 1 Active"</strong> (berapa lama warning berlangsung) dan <strong>"Stage 2 Active"</strong> (berapa lama critical berlangsung). Nilainya real-time countdown sejak stage berubah.</p>
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <div style="flex:1; background:#111; border:1px solid #b8860b; border-radius:6px; padding:10px; text-align:center;">
+          <div style="color:#aaa; font-size:9px;">STAGE 1 DURATION</div>
+          <div style="color:#ffc107; font-size:18px; font-weight:bold;">3.2s</div>
+          <div style="color:#555; font-size:8px;">Sejak WARNING aktif</div>
+        </div>
+        <div style="flex:1; background:#111; border:1px solid #8b0000; border-radius:6px; padding:10px; text-align:center;">
+          <div style="color:#aaa; font-size:9px;">STAGE 2 DURATION</div>
+          <div style="color:#ff6b6b; font-size:18px; font-weight:bold;">17.3s</div>
+          <div style="color:#555; font-size:8px;">Sejak CRITICAL / Throttle</div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:8px;">
+        <div class="pros"><h4>Pro</h4><ul><li>Langsung terlihat real-time saat demo</li><li>Butuh sedikit logic di exporter (track timestamp transisi)</li></ul></div>
+        <div class="cons"><h4>Kekurangan</h4><ul><li>Reset ke 0 saat stage kembali normal — tidak ada histori</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Stat Panels: Last Event Latency</h3>
+      <p>Tiga stat: <strong>"Detect Latency"</strong>, <strong>"Confirm Latency"</strong>, <strong>"Total to Mitigate"</strong> — nilai dari event terakhir (sticky, tidak reset saat normal).</p>
+      <div style="display:flex; gap:6px; margin-top:10px;">
+        <div style="flex:1; background:#111; border-radius:6px; padding:8px; text-align:center;">
+          <div style="color:#aaa; font-size:8px;">DETECT LATENCY</div>
+          <div style="color:#ffd43b; font-size:14px; font-weight:bold;">3.1s</div>
+          <div style="color:#555; font-size:7px;">Stage 0→1 (last event)</div>
+        </div>
+        <div style="flex:1; background:#111; border-radius:6px; padding:8px; text-align:center;">
+          <div style="color:#aaa; font-size:8px;">CONFIRM LATENCY</div>
+          <div style="color:#ff9f43; font-size:14px; font-weight:bold;">5.0s</div>
+          <div style="color:#555; font-size:7px;">Stage 1→2 (last event)</div>
+        </div>
+        <div style="flex:1; background:#111; border:1px solid #8b0000; border-radius:6px; padding:8px; text-align:center;">
+          <div style="color:#aaa; font-size:8px;">TOTAL MITIGATE</div>
+          <div style="color:#ff6b6b; font-size:14px; font-weight:bold;">8.1s</div>
+          <div style="color:#555; font-size:7px;">Serangan → Throttle</div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:8px;">
+        <div class="pros"><h4>Pro</h4><ul><li>Angka sticky — cocok untuk screenshot thesis</li><li>Terlihat jelas efisiensi sistem</li></ul></div>
+        <div class="cons"><h4>Kekurangan</h4><ul><li>Butuh tracking timestamp 3 state di exporter</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Keduanya: Real-time Duration + Last Event Latency</h3>
+      <p>Baris baru di dashboard: kiri = duration real-time (A), kanan = latency event terakhir (B). Total 5 stat baru.</p>
+      <div style="margin-top:10px; background:#111; border-radius:6px; padding:8px;">
+        <div style="color:#aaa; font-size:9px; margin-bottom:6px;">Row baru "Latency Metrics":</div>
+        <div style="display:flex; gap:4px;">
+          <div style="flex:1; border:1px solid #333; border-radius:4px; padding:5px; text-align:center; font-size:8px;">
+            <div style="color:#aaa;">STAGE 1 DUR</div><div style="color:#ffc107;">3.2s</div>
+          </div>
+          <div style="flex:1; border:1px solid #333; border-radius:4px; padding:5px; text-align:center; font-size:8px;">
+            <div style="color:#aaa;">STAGE 2 DUR</div><div style="color:#ff6b6b;">17s</div>
+          </div>
+          <div style="flex:1; border:1px solid #333; border-radius:4px; padding:5px; text-align:center; font-size:8px; border-color:#555;">
+            <div style="color:#aaa;">DETECT LAT</div><div style="color:#ffd43b;">3.1s</div>
+          </div>
+          <div style="flex:1; border:1px solid #333; border-radius:4px; padding:5px; text-align:center; font-size:8px; border-color:#555;">
+            <div style="color:#aaa;">CONFIRM LAT</div><div style="color:#ff9f43;">5.0s</div>
+          </div>
+          <div style="flex:1; border:1px solid #8b0000; border-radius:4px; padding:5px; text-align:center; font-size:8px;">
+            <div style="color:#aaa;">TOTAL</div><div style="color:#ff6b6b;">8.1s</div>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:8px;">
+        <div class="pros"><h4>Pro</h4><ul><li>Paling lengkap untuk thesis & demo</li></ul></div>
+        <div class="cons"><h4>Kekurangan</h4><ul><li>Dashboard lebih padat</li><li>Exporter butuh tracking 3 timestamp</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

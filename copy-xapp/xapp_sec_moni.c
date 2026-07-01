@@ -392,7 +392,7 @@ static kpm_act_def_t fill_report_style_5(ric_report_style_item_t const* report_i
 
 typedef kpm_act_def_t (*fill_kpm_act_def)(ric_report_style_item_t const* report_item);
 static fill_kpm_act_def get_kpm_act_def[END_RIC_SERVICE_REPORT] = {
-    fill_report_style_1, NULL, NULL, fill_report_style_4, NULL,
+    fill_report_style_1, NULL, NULL, fill_report_style_4, fill_report_style_5,
 };
 
 static kpm_sub_data_t gen_kpm_subs(kpm_ran_function_def_t const* ran_func, ric_report_style_item_t const* report_item) {
@@ -1170,6 +1170,7 @@ static void sm_cb_kpm(sm_ag_if_rd_t const* rd, global_e2_node_id_t const* e2_nod
       int t = ue_buffers[ue_idx].count;
 
       float prb_dl = 0.0f, prb_ul = 0.0f, cqi_ue = 15.0f, rach_ue = 0.0f;
+      float thp_dl = 0.0f, thp_ul = 0.0f;
 
       /* Always extract metrics so CSV gets real values even when buffer is full */
       kpm_ind_msg_format_1_t const* msg_frm_1 =
@@ -1195,15 +1196,24 @@ static void sm_cb_kpm(sm_ag_if_rd_t const* rd, global_e2_node_id_t const* e2_nod
             else if (strstr(name, "RRU.PrbUsedUl") != NULL) prb_ul  = val / 100.0f;
             else if (strstr(name, "CQI")           != NULL) cqi_ue  = val;
             else if (strstr(name, "RACH.Preamble") != NULL) rach_ue = val;
+            else if (strstr(name, "DRB.UEThpDl")   != NULL) thp_dl  = val;
+            else if (strstr(name, "DRB.UEThpUl")   != NULL) thp_ul  = val;
+
+            /* Debug: log semua metric UE-level dari Style 5 agar bisa diverifikasi */
+            printf("[Style5-UE rnti=%u] %s = %.4f\n", rnti, name, val);
           }
         }
       }
+      printf("[Style5-UE rnti=%u] => prb_dl=%.3f prb_ul=%.3f cqi=%.1f rach=%.1f "
+             "thp_dl=%.2f thp_ul=%.2f\n",
+             rnti, prb_dl, prb_ul, cqi_ue, rach_ue, thp_dl, thp_ul);
+      fflush(stdout);
 
       /* Fill inference buffer and run inference when window is ready */
       if (t < WINDOW_SIZE) {
           for (int f = 0; f < NUM_FEATURES; f++) ue_buffers[ue_idx].features[t][f] = 0.0f;
-          ue_buffers[ue_idx].features[t][0] = 0.0f;  /* DRB.UEThpDl — always 0 in srsRAN */
-          ue_buffers[ue_idx].features[t][1] = 0.0f;  /* DRB.UEThpUl — always 0 in srsRAN */
+          ue_buffers[ue_idx].features[t][0] = thp_dl;  /* DRB.UEThpDl — test apakah non-zero */
+          ue_buffers[ue_idx].features[t][1] = thp_ul;  /* DRB.UEThpUl — test apakah non-zero */
           ue_buffers[ue_idx].features[t][2] = prb_dl;
           ue_buffers[ue_idx].features[t][3] = prb_ul;
           ue_buffers[ue_idx].features[t][4] = cqi_ue / 15.0f;

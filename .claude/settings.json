@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//home/telmat/flexric/examples/xApp/c/monitor/**)",
+      "Bash(/home/telmat/xapp/security-xapp/venv/bin/python3 evaluate_detection.py)",
+      "Read(//tmp/**)",
+      "Bash(python3 -c ' *)"
+    ]
+  }
+}

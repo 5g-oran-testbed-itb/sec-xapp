@@ -1,0 +1,10 @@
+{
+  "mu": 0.002455580048263073,
+  "sigma": 0.0032054444309324026,
+  "threshold": 0.01757119968533516,
+  "percentile": 99.5,
+  "fpr_pct": 0.5059246438556784,
+  "source": "validation_set",
+  "vae": true,
+  "beta_inf": 0.01
+}

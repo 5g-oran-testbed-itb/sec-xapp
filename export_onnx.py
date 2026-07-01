@@ -1,17 +1,22 @@
 """
-Export LSTM-Autoencoder v2 ke ONNX untuk inferensi di C xApp.
+Export LSTM-Autoencoder / LSTM-VAE ke ONNX untuk inferensi di C xApp.
 
 Pipeline end-to-end yang dibake ke dalam ONNX:
-  Raw features → MinMaxScaler normalize → LSTM-AE → MSE error → anomaly score
+  Raw features → MinMaxScaler normalize → LSTM-AE/VAE → anomaly score
 
-Input ONNX  : raw (unnormalized) features, shape [batch, seq_len=10, n_features=10]
+Input ONNX  : raw (unnormalized) features, shape [batch, seq_len=10, n_features=18]
 Output ONNX : anomaly score per sample; score > 0.5 berarti anomali (error > threshold)
 
 Usage:
-  cd /home/telmat/xapp/security-xapp
+  # Plain AE (default — v8):
   ./venv/bin/python3 export_onnx.py
+
+  # VAE:
+  ./venv/bin/python3 export_onnx.py --vae --model models/lstm_autoencoder_v13.pt \
+      --threshold models/lstm_autoencoder_v13_threshold.json --beta 0.01
 """
 
+import argparse
 import json
 import os
 import pickle
@@ -21,58 +26,122 @@ import torch
 import torch.nn as nn
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from src.detection.lstm_autoencoder import LSTMAutoencoder
-from src.detection.feature_schema import FEATURE_NAMES
+from src.detection.lstm_autoencoder import LSTMAutoencoder, LSTMVariationalAutoencoder
+from src.detection.feature_schema import FEATURE_NAMES, FEATURE_WEIGHTS as _FW_DICT
 
 
 class ONNXSecurityWrapper(nn.Module):
     """
-    Wrapper PyTorch yang membungkus seluruh pipeline deteksi ke dalam satu ONNX graph:
+    Wrapper PyTorch untuk plain AE — membungkus seluruh pipeline deteksi:
       1. MinMaxScaler normalization (dibake dari scaler.pkl)
-      2. LSTM-Autoencoder forward pass
+      2. LSTM-AE forward pass
       3. MSE reconstruction error per sample
       4. Normalisasi ke anomaly score (score > 0.5 = anomali)
-
-    Ini membuat kode C hanya perlu mengumpan raw feature tensor — tidak ada
-    preprocessing di sisi C.
     """
 
     def __init__(self, lstm_model: LSTMAutoencoder, scaler, threshold: float):
         super().__init__()
         self.model = lstm_model
 
-        # MinMaxScaler: x_scaled = (x - data_min) / (data_max - data_min)
         data_min   = torch.tensor(scaler.data_min_, dtype=torch.float32)
         data_range = torch.tensor(scaler.data_max_ - scaler.data_min_, dtype=torch.float32)
-        data_range = torch.clamp(data_range, min=1e-8)  # cegah division by zero fitur konstan
+        data_range = torch.clamp(data_range, min=1e-8)
+
+        # feature weights dari feature_schema — normalisasi agar mean=1 (skala MSE tidak berubah)
+        fw_raw = torch.tensor([_FW_DICT.get(n, 1.0) for n in FEATURE_NAMES], dtype=torch.float32)
+        fw_norm = fw_raw / fw_raw.mean()
+
+        self.data_min     = nn.Parameter(data_min,   requires_grad=False)
+        self.data_range   = nn.Parameter(data_range, requires_grad=False)
+        self.feat_weights = nn.Parameter(fw_norm,    requires_grad=False)
+        self.threshold    = nn.Parameter(
+            torch.tensor([threshold], dtype=torch.float32), requires_grad=False
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x_norm = (x - self.data_min) / self.data_range
+        x_norm = torch.clamp(x_norm, 0.0, 1.0)
+        reconstructed = self.model(x_norm)
+        # weighted MSE: bobot per-fitur broadcast ke (batch, seq_len, n_features)
+        error = torch.mean((x_norm - reconstructed) ** 2 * self.feat_weights, dim=(1, 2))
+        # score > 0.5  →  weighted_error > threshold  →  anomali
+        score = 0.5 * (error / self.threshold)
+        return score
+
+
+class ONNXVAEWrapper(nn.Module):
+    """
+    Wrapper PyTorch untuk VAE — pipeline:
+      1. MinMaxScaler normalization
+      2. LSTM-VAE encoder → μ (deterministic inference)
+      3. LSTM-VAE decoder dari μ
+      4. anomaly score = MSE_recon + β_inf * KL  →  normalisasi ke 0.5 threshold
+    """
+
+    def __init__(self, vae_model: LSTMVariationalAutoencoder, scaler,
+                 threshold: float, beta_inf: float):
+        super().__init__()
+        self.model = vae_model
+
+        data_min   = torch.tensor(scaler.data_min_, dtype=torch.float32)
+        data_range = torch.tensor(scaler.data_max_ - scaler.data_min_, dtype=torch.float32)
+        data_range = torch.clamp(data_range, min=1e-8)
 
         self.data_min   = nn.Parameter(data_min,   requires_grad=False)
         self.data_range = nn.Parameter(data_range, requires_grad=False)
         self.threshold  = nn.Parameter(
             torch.tensor([threshold], dtype=torch.float32), requires_grad=False
         )
+        self.beta_inf   = nn.Parameter(
+            torch.tensor([beta_inf], dtype=torch.float32), requires_grad=False
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (batch, seq_len, n_features) — nilai raw dari xApp C
         x_norm = (x - self.data_min) / self.data_range
-        x_norm = torch.clamp(x_norm, 0.0, 1.0)   # clip ke [0,1] sesuai MinMaxScaler
+        x_norm = torch.clamp(x_norm, 0.0, 1.0)
 
-        reconstructed = self.model(x_norm)
+        mu, logvar = self.model.encoder(x_norm)
+        recon      = self.model.decoder(mu)  # pakai μ tanpa sampling (deterministic)
+        recon_err  = torch.mean((x_norm - recon) ** 2, dim=(1, 2))
+        kl         = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp(), dim=1)
+        raw_score  = recon_err + self.beta_inf * kl
 
-        # MSE reconstruction error per sample
-        error = torch.mean((x_norm - reconstructed) ** 2, dim=(1, 2))
-
-        # Anomaly score: 0.5 * (error / threshold)
-        # score > 0.5  →  error > threshold  →  anomali
-        score = 0.5 * (error / self.threshold)
+        # score > 0.5  →  raw_score > threshold  →  anomali
+        score = 0.5 * (raw_score / self.threshold)
         return score
 
 
 def main():
-    model_path     = "models/lstm_autoencoder_v5.pt"
-    scaler_path    = "models/scaler.pkl"
-    threshold_path = "models/lstm_autoencoder_v5_threshold.json"
-    onnx_path      = "security_model.onnx"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--vae",       action="store_true",
+                        help="Export VAE model (default: plain AE)")
+    parser.add_argument("--model",     type=str, default=None,
+                        help="Path model .pt (default: v8 untuk AE, v13 untuk VAE)")
+    parser.add_argument("--threshold", type=str, default=None,
+                        help="Path threshold JSON")
+    parser.add_argument("--scaler",    type=str, default="models/scaler.pkl")
+    parser.add_argument("--out",       type=str, default="security_model.onnx")
+    parser.add_argument("--beta",      type=float, default=0.01,
+                        help="β untuk VAE inference scoring (default: 0.01)")
+    parser.add_argument("--seq-len",   type=int,   default=10,
+                        help="Panjang sequence LSTM (default: 10)")
+    parser.add_argument("--num-features", type=int, default=None,
+                        help="Gunakan N fitur pertama dari FEATURE_NAMES (default: semua)")
+    args = parser.parse_args()
+
+    global FEATURE_NAMES
+    if args.num_features is not None and args.num_features < len(FEATURE_NAMES):
+        FEATURE_NAMES = FEATURE_NAMES[:args.num_features]
+
+    if args.vae:
+        model_path     = args.model     or "models/lstm_autoencoder_v13.pt"
+        threshold_path = args.threshold or "models/lstm_autoencoder_v13_threshold.json"
+    else:
+        model_path     = args.model     or "models/lstm_autoencoder_v8.pt"
+        threshold_path = args.threshold or "models/lstm_autoencoder_v8_threshold.json"
+
+    scaler_path = args.scaler
+    onnx_path   = args.out
 
     config = {
         'lstm_model': {
@@ -80,12 +149,10 @@ def main():
             'encoder_hidden': [64, 32],
             'decoder_hidden': [32, 64],
             'latent_dim': 32,
-            'learning_rate': 0.001,
-            'epochs': 150,
-            'batch_size': 64,
+            'bidirectional': False,
         },
         'detection': {
-            'sequence_length': 10,
+            'sequence_length': args.seq_len,
             'anomaly_threshold_percentile': 99.5,
         }
     }
@@ -95,8 +162,11 @@ def main():
             print(f"Error: {path} tidak ditemukan.")
             sys.exit(1)
 
-    print(f"[1/4] Loading LSTM model dari {model_path}...")
-    base_model = LSTMAutoencoder.load(model_path, config)
+    print(f"[1/4] Loading {'VAE' if args.vae else 'AE'} model dari {model_path}...")
+    if args.vae:
+        base_model = LSTMVariationalAutoencoder.load(model_path, config)
+    else:
+        base_model = LSTMAutoencoder.load(model_path, config)
     base_model.eval()
 
     print(f"[2/4] Loading MinMaxScaler dari {scaler_path}...")
@@ -115,13 +185,16 @@ def main():
     print(f"      T={threshold:.6f}  ({pct_label})  FPR={thresh_data['fpr_pct']:.2f}%  source={thresh_data['source']}")
 
     print(f"[4/4] Wrapping model dan export ke {onnx_path}...")
-    wrapped = ONNXSecurityWrapper(base_model, scaler, threshold)
+    if args.vae:
+        beta_inf = thresh_data.get('beta_inf', args.beta)
+        wrapped  = ONNXVAEWrapper(base_model, scaler, threshold, beta_inf)
+        print(f"      VAE β_inf={beta_inf}")
+    else:
+        wrapped = ONNXSecurityWrapper(base_model, scaler, threshold)
     wrapped.eval()
 
-    # Dummy input: satu batch, 10 timestep, 10 fitur — semua nol (benign idle)
-    dummy_input = torch.zeros(1, 10, len(FEATURE_NAMES), dtype=torch.float32)
+    dummy_input = torch.zeros(1, args.seq_len, len(FEATURE_NAMES), dtype=torch.float32)
 
-    # Verifikasi forward pass sebelum export
     with torch.no_grad():
         dummy_score = wrapped(dummy_input)
     print(f"      Dummy forward pass OK — score={dummy_score.item():.6f} "
@@ -142,10 +215,11 @@ def main():
     size_mb = os.path.getsize(onnx_path) / 1024 / 1024
     print(f"[OK] ONNX tersimpan: {onnx_path}  ({size_mb:.2f} MB)")
 
+    mode_str = f"LSTM-VAE (β_inf={thresh_data.get('beta_inf', args.beta)})" if args.vae else "LSTM-AE (mean-MSE)"
     print(f"\n=== Summary ===")
-    print(f"  Model      : {model_path}")
+    print(f"  Model      : {model_path}  [{mode_str}]")
     print(f"  Scaler     : MinMaxScaler  ({len(FEATURE_NAMES)} features, dibake ke ONNX)")
-    print(f"  Threshold  : {threshold:.6f}  (P{thresh_data.get('percentile', 99.5)} dari val set, FPR={thresh_data['fpr_pct']:.2f}%)")
+    print(f"  Threshold  : {threshold:.6f}  ({pct_label} dari val set, FPR={thresh_data['fpr_pct']:.2f}%)")
     print(f"  ONNX output: {onnx_path}  ({size_mb:.2f} MB)")
     print(f"\n  Input  → raw features [batch, 10, {len(FEATURE_NAMES)}] (belum dinormalisasi)")
     print(f"  Output → anomaly score per sample  (score > 0.5 = anomali)")
