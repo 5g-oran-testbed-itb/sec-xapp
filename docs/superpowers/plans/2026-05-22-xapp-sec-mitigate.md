@@ -37,7 +37,7 @@ Build command: `cd ~/flexric/build && make -j$(nproc) xapp_sec_mitigate xapp_sec
 - Create: `~/flexric/examples/xApp/c/monitor/vendor/cJSON.c`
 - Create: `~/flexric/examples/xApp/c/monitor/vendor/cJSON.h`
 
-- [ ] **Step 1: Create vendor directory and download cJSON**
+- [x] **Step 1: Create vendor directory and download cJSON**
 
 ```bash
 mkdir -p ~/flexric/examples/xApp/c/monitor/vendor
@@ -46,7 +46,7 @@ curl -fsSL https://raw.githubusercontent.com/DaveGamble/cJSON/v1.7.18/cJSON.c -o
 curl -fsSL https://raw.githubusercontent.com/DaveGamble/cJSON/v1.7.18/cJSON.h -o cJSON.h
 ```
 
-- [ ] **Step 2: Verify files downloaded correctly**
+- [x] **Step 2: Verify files downloaded correctly**
 
 ```bash
 head -3 ~/flexric/examples/xApp/c/monitor/vendor/cJSON.h
@@ -54,7 +54,7 @@ head -3 ~/flexric/examples/xApp/c/monitor/vendor/cJSON.h
 
 Expected output contains: `#ifndef cJSON__h` and version info.
 
-- [ ] **Step 3: Sync to copy-xapp**
+- [x] **Step 3: Sync to copy-xapp**
 
 ```bash
 mkdir -p ~/sec-xapp/copy-xapp/vendor
@@ -62,7 +62,7 @@ cp ~/flexric/examples/xApp/c/monitor/vendor/cJSON.c ~/sec-xapp/copy-xapp/vendor/
 cp ~/flexric/examples/xApp/c/monitor/vendor/cJSON.h ~/sec-xapp/copy-xapp/vendor/
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 cd ~/sec-xapp
@@ -77,7 +77,7 @@ git commit -m "feat: add cJSON v1.7.18 vendor dependency"
 **Files:**
 - Create: `~/flexric/examples/xApp/c/monitor/mitigate_ipc.h`
 
-- [ ] **Step 1: Write the header file**
+- [x] **Step 1: Write the header file**
 
 Create `~/flexric/examples/xApp/c/monitor/mitigate_ipc.h`:
 
@@ -100,7 +100,7 @@ Create `~/flexric/examples/xApp/c/monitor/mitigate_ipc.h`:
 #endif /* MITIGATE_IPC_H */
 ```
 
-- [ ] **Step 2: Sync to copy-xapp and commit**
+- [x] **Step 2: Sync to copy-xapp and commit**
 
 ```bash
 cp ~/flexric/examples/xApp/c/monitor/mitigate_ipc.h ~/sec-xapp/copy-xapp/
@@ -119,7 +119,7 @@ git commit -m "feat: add mitigate_ipc.h IPC constants header"
 This is the full mitigation xApp. All E2SM-RC helper code is copied from the working
 `xapp_prb_ctrl.c` (examples/xApp/c/ctrl/) to avoid the crash from the old inline approach.
 
-- [ ] **Step 1: Write xapp_sec_mitigate.c**
+- [x] **Step 1: Write xapp_sec_mitigate.c**
 
 Create `~/flexric/examples/xApp/c/monitor/xapp_sec_mitigate.c`:
 
@@ -579,7 +579,7 @@ int main(int argc, char* argv[])
 }
 ```
 
-- [ ] **Step 2: Sync to copy-xapp and commit**
+- [x] **Step 2: Sync to copy-xapp and commit**
 
 ```bash
 cp ~/flexric/examples/xApp/c/monitor/xapp_sec_mitigate.c ~/sec-xapp/copy-xapp/
@@ -595,7 +595,7 @@ git commit -m "feat: add xapp_sec_mitigate IPC server + E2SM-RC executor"
 **Files:**
 - Modify: `~/flexric/examples/xApp/c/monitor/CMakeLists.txt`
 
-- [ ] **Step 1: Add xapp_sec_mitigate target and vendor/cJSON.c to xapp_sec_moni**
+- [x] **Step 1: Add xapp_sec_mitigate target and vendor/cJSON.c to xapp_sec_moni**
 
 At the end of `~/flexric/examples/xApp/c/monitor/CMakeLists.txt`, append:
 
@@ -631,7 +631,7 @@ add_executable(xapp_sec_moni
 )
 ```
 
-- [ ] **Step 2: Test build**
+- [x] **Step 2: Test build**
 
 ```bash
 cd ~/flexric/build
@@ -645,7 +645,7 @@ Expected: binary at `~/flexric/build/examples/xApp/c/monitor/xapp_sec_mitigate`
 ls -lh ~/flexric/build/examples/xApp/c/monitor/xapp_sec_mitigate
 ```
 
-- [ ] **Step 3: Sync CMakeLists to copy-xapp and commit**
+- [x] **Step 3: Sync CMakeLists to copy-xapp and commit**
 
 ```bash
 cp ~/flexric/examples/xApp/c/monitor/CMakeLists.txt ~/sec-xapp/copy-xapp/
@@ -660,7 +660,7 @@ git commit -m "build: add xapp_sec_mitigate target and vendor/cJSON to CMakeList
 
 Before touching `xapp_sec_moni`, verify the socket + JSON path works in isolation.
 
-- [ ] **Step 1: Start mitigator in socket-only mode for testing**
+- [x] **Step 1: Start mitigator in socket-only mode for testing**
 
 In terminal A, temporarily run the binary with a dummy config path to test socket (it will fail RIC init but socket will bind):
 
@@ -704,7 +704,7 @@ Expected:
 **Files:**
 - Modify: `~/flexric/examples/xApp/c/monitor/xapp_sec_moni.c`
 
-- [ ] **Step 1: Add IPC includes and globals after existing includes**
+- [x] **Step 1: Add IPC includes and globals after existing includes**
 
 Find the block ending with `#include "ue_tracker.h"` (around line 52) and add after it:
 
@@ -725,7 +725,7 @@ static int      g_ipc_fd        = -1;
 static uint64_t g_sev0_since_ms = 0;  /* epoch ms when severity first hit 0 */
 ```
 
-- [ ] **Step 2: Add ipc_try_connect() and ipc_send_mitigate() functions**
+- [x] **Step 2: Add ipc_try_connect() and ipc_send_mitigate() functions**
 
 Add these two functions immediately before `static void rc_send_prb_quota(int max_prb_pct)` (around line 443):
 
@@ -805,7 +805,7 @@ static void ipc_send_mitigate(const char* action, int prb_limit,
 }
 ```
 
-- [ ] **Step 3: Replace main-loop throttle logic with IPC calls**
+- [x] **Step 3: Replace main-loop throttle logic with IPC calls**
 
 Find the main loop block (around line 1793–1828):
 
@@ -925,7 +925,7 @@ Replace the entire `while(keep_running)` loop with:
   }
 ```
 
-- [ ] **Step 4: Add IPC cleanup in shutdown section**
+- [x] **Step 4: Add IPC cleanup in shutdown section**
 
 Find `printf("Stopping xApp...\n");` (around line 1830) and add before it:
 
@@ -937,7 +937,7 @@ Find `printf("Stopping xApp...\n");` (around line 1830) and add before it:
   }
 ```
 
-- [ ] **Step 5: Build both targets**
+- [x] **Step 5: Build both targets**
 
 ```bash
 cd ~/flexric/build
@@ -946,7 +946,7 @@ make -j$(nproc) xapp_sec_moni xapp_sec_mitigate 2>&1 | tail -30
 
 Expected: both compile without errors.
 
-- [ ] **Step 6: Sync to copy-xapp and commit**
+- [x] **Step 6: Sync to copy-xapp and commit**
 
 ```bash
 cp ~/flexric/examples/xApp/c/monitor/xapp_sec_moni.c ~/sec-xapp/copy-xapp/
@@ -962,7 +962,7 @@ git commit -m "feat: add IPC client to xapp_sec_moni for xapp_sec_mitigate integ
 **Files:**
 - Modify: `~/sec-xapp/start_xapp_c_mitigate.sh`
 
-- [ ] **Step 1: Add MITIGATE_BIN variable**
+- [x] **Step 1: Add MITIGATE_BIN variable**
 
 Find the variables block (lines 28–32) and add:
 
@@ -970,7 +970,7 @@ Find the variables block (lines 28–32) and add:
 MITIGATE_BIN="/home/telmat/flexric/build/examples/xApp/c/monitor/xapp_sec_mitigate"
 ```
 
-- [ ] **Step 2: Replace Window 2 iptables watcher with mitigator pane**
+- [x] **Step 2: Replace Window 2 iptables watcher with mitigator pane**
 
 Find the `Window 2` block (line 258–266):
 
@@ -1005,7 +1005,7 @@ tmux send-keys -t "$SESSION:2" \
        -c '$XAPP_CONF' --ue_f1ap 1 --mcc 001 --mnc 01 --sst 1" Enter
 ```
 
-- [ ] **Step 3: Update Pane 3 comment — remove --mitigate flag note**
+- [x] **Step 3: Update Pane 3 comment — remove --mitigate flag note**
 
 Find the comment on Pane 3 (line 222):
 ```bash
@@ -1019,7 +1019,7 @@ Replace with:
 # xapp_sec_moni menjadi IPC client — tidak perlu --mitigate flag
 ```
 
-- [ ] **Step 4: Remove iptables watcher script generation and cleanup**
+- [x] **Step 4: Remove iptables watcher script generation and cleanup**
 
 Remove the `cat > "$WATCHER_SCRIPT" << 'WATCHER_EOF' ... WATCHER_EOF` block (lines 109–157).
 
@@ -1045,7 +1045,7 @@ rm -f "$PHASE2_FLAG"
 
 Also remove the sshpass iptables cleanup block at startup (lines 97–103).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd ~/sec-xapp
