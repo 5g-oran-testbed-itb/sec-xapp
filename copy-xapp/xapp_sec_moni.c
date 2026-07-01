@@ -876,6 +876,8 @@ static int g_mitigate_enabled = 0;
  * and re-attempted each main-loop iteration if lost.                    */
 static int      g_ipc_fd        = -1;
 static uint64_t g_sev0_since_ms = 0;  /* epoch ms when severity first hit 0 */
+static volatile uint32_t g_throttle_target_ue_id = 1;
+
 
 
 /* Detection mode: 0=rule-only, 1=lstm-only, 2=hybrid (default) */
@@ -899,7 +901,7 @@ static int ipc_try_connect(void)
 /* ─── IPC: send mitigation command and wait for ACK ─────────────────── */
 static void ipc_send_mitigate(const char* action, int prb_limit,
                                const char* attack, float confidence,
-                               const char* reason)
+                               const char* reason, uint32_t ue_id)
 {
     if (g_ipc_fd < 0) {
         printf("[IPC] Not connected — %s skipped\n", action);
@@ -917,6 +919,7 @@ static void ipc_send_mitigate(const char* action, int prb_limit,
     cJSON_AddStringToObject(msg, "action",     action);
     cJSON_AddNumberToObject(msg, "prb_limit",  prb_limit);
     cJSON_AddStringToObject(msg, "reason",     reason);
+    cJSON_AddNumberToObject(msg, "ue_id",      (double)ue_id);
     char* json = cJSON_PrintUnformatted(msg);
     cJSON_Delete(msg);
 
@@ -1815,10 +1818,27 @@ static void sm_cb_kpm(sm_ag_if_rd_t const* rd, global_e2_node_id_t const* e2_nod
       ue_id_e2sm_t const* uid = &msg_frm_3->meas_report_per_ue[i].ue_meas_report_lst;
       printf("[FORMAT3] UE[%zu] id_type=%d\n", i, uid->type);
       fflush(stdout);
-      if (uid->type == GNB_UE_ID_E2SM)
+      if (uid->type == GNB_UE_ID_E2SM) {
+        if (uid->gnb.gnb_cu_ue_f1ap_lst != NULL && uid->gnb.gnb_cu_ue_f1ap_lst_len > 0) {
+          rnti = uid->gnb.gnb_cu_ue_f1ap_lst[0];
+          printf("[FORMAT3] UE[%zu] decoded rnti=%u from gnb_cu_ue_f1ap_lst[0] (lst_len=%zu, amf_ue_ngap_id=%lu)\n",
+                 i, rnti, uid->gnb.gnb_cu_ue_f1ap_lst_len, uid->gnb.amf_ue_ngap_id);
+        } else {
           rnti = (uint32_t)uid->gnb.amf_ue_ngap_id;
-      else if (uid->type == GNB_DU_UE_ID_E2SM)
-          rnti = uid->gnb_du.gnb_cu_ue_f1ap;
+          printf("[FORMAT3] UE[%zu] decoded rnti=%u from amf_ue_ngap_id (f1ap_lst is NULL/empty)\n", i, rnti);
+        }
+      } else if (uid->type == GNB_DU_UE_ID_E2SM) {
+          if (uid->gnb_du.ran_ue_id != NULL) {
+              rnti = (uint32_t)*(uid->gnb_du.ran_ue_id);
+              printf("[FORMAT3] UE[%zu] decoded rnti=%u from gnb_du.ran_ue_id (gnb_cu_ue_f1ap=%u)\n",
+                     i, rnti, uid->gnb_du.gnb_cu_ue_f1ap);
+          } else {
+              rnti = uid->gnb_du.gnb_cu_ue_f1ap;
+              printf("[FORMAT3] UE[%zu] decoded rnti=%u from gnb_du.gnb_cu_ue_f1ap (ran_ue_id is NULL)\n",
+                     i, rnti);
+          }
+      }
+      fflush(stdout);
 
       int ue_idx = rnti % MAX_UE;
       int t = ue_buffers[ue_idx].count;
@@ -1902,6 +1922,7 @@ static void sm_cb_kpm(sm_ag_if_rd_t const* rd, global_e2_node_id_t const* e2_nod
                   /* Per-UE alert → request E2SM-RC throttle; update last-alert timestamp
                    * so cell-level restore path does not fire while attack is ongoing. */
                   g_last_ue_alert_ms = (uint64_t)ids_now_ms;
+                  g_throttle_target_ue_id = rnti;
                   if (!g_throttle_active)
                       g_pending_throttle = 1;
               }
@@ -2423,15 +2444,24 @@ int main(int argc, char *argv[])
 
   e2_node_arr_xapp_t nodes = {0};
 
-  // Wait for at least one E2 node to connect (retry every 2 seconds)
+  // Wait for E2 DU node to connect and register RAN functions
   for (int attempt = 0; attempt < 120; attempt++) {  // max 4 minutes
     nodes = e2_nodes_xapp_api();
-    if (nodes.len > 0)
+    bool du_found = false;
+    if (nodes.len > 0) {
+      for (int i = 0; i < (int)nodes.len; i++) {
+        if (E2AP_NODE_IS_DU(nodes.n[i].id.type) && nodes.n[i].len_rf > 0) {
+          du_found = true;
+          break;
+        }
+      }
+    }
+    if (du_found)
       break;
     if (attempt == 0)
-      printf("Waiting for E2 nodes to connect...\n");
+      printf("Waiting for E2 DU node to connect and register RAN functions...\n");
     if (attempt % 5 == 0 && attempt > 0)
-      printf("  Still waiting... (attempt %d)\n", attempt);
+      printf("  Still waiting for DU node... (attempt %d)\n", attempt);
     free_e2_node_arr_xapp(&nodes);
     sleep(2);
   }
@@ -2452,7 +2482,9 @@ int main(int argc, char *argv[])
   sm_ans_xapp_t* rlc_handle = NULL;
 
   if(nodes.len > 0){
-    kpm_handle = calloc( nodes.len, sizeof(sm_ans_xapp_t) );
+    /* Allocate enough for every config SM entry per node (supports dual KPM sub: Format 1 + Format 4) */
+    int max_kpm = (int)nodes.len * (args.sub_oran_sm_len > 0 ? args.sub_oran_sm_len : 1);
+    kpm_handle = calloc( max_kpm, sizeof(sm_ans_xapp_t) );
     assert(kpm_handle  != NULL);
     rc_handle = calloc( nodes.len, sizeof(sm_ans_xapp_t) );
     assert(rc_handle  != NULL);
@@ -2527,9 +2559,10 @@ int main(int argc, char *argv[])
           *kpm_sub.ad = get_kpm_act_def[target_style](report_item);
         }
 
-        printf("xApp subscribes RAN Func ID %d in E2 node idx %d, nb_id %d\n", SM_KPM_ID, i, n->id.nb_id.nb_id);
-        kpm_handle[i] = report_sm_xapp_api(&nodes.n[i].id, SM_KPM_ID, &kpm_sub, sm_cb_kpm);
-        assert(kpm_handle[i].success == true);
+        printf("xApp subscribes RAN Func ID %d in E2 node idx %d, nb_id %d (kpm_handle slot %d)\n",
+               SM_KPM_ID, i, n->id.nb_id.nb_id, n_kpm_handle);
+        kpm_handle[n_kpm_handle] = report_sm_xapp_api(&nodes.n[i].id, SM_KPM_ID, &kpm_sub, sm_cb_kpm);
+        assert(kpm_handle[n_kpm_handle].success == true);
         n_kpm_handle += 1;
 
       } else if (!strcasecmp(args.sub_oran_sm[j].name, "rc")) {
@@ -2649,12 +2682,13 @@ int main(int argc, char *argv[])
     if (g_pending_throttle == 1 && !g_throttle_active
         && (now_ms - g_throttle_last_ms > THROTTLE_COOLDOWN_MS)) {
       ids_detection_state_t det = ids_get_detection_state();
-      printf("[DETECT] CRITICAL — sending THROTTLE to mitigator (max=5%%)\n");
+      printf("[DETECT] CRITICAL — sending THROTTLE to mitigator (max=5%%) target_ue_id=%u\n", g_throttle_target_ue_id);
       fflush(stdout);
       ipc_send_mitigate("THROTTLE", 5,
                         alert_type_to_str(det.alert_type),
                         g_last_anomaly_score,
-                        "stage2_persistence_confirmed");
+                        "stage2_persistence_confirmed",
+                        g_throttle_target_ue_id);
       g_throttle_active  = 1;
       g_throttle_last_ms = now_ms;
       g_sev0_since_ms    = 0;
@@ -2670,12 +2704,13 @@ int main(int argc, char *argv[])
         fflush(stdout);
       } else if (now_ms - g_sev0_since_ms >= RESTORE_GRACE_MS) {
         ids_detection_state_t det = ids_get_detection_state();
-        printf("[DETECT] Grace elapsed — sending RESTORE to mitigator (max=100%%)\n");
+        printf("[DETECT] Grace elapsed — sending RESTORE to mitigator (max=100%%) target_ue_id=%u\n", g_throttle_target_ue_id);
         fflush(stdout);
         ipc_send_mitigate("RESTORE", 100,
                           alert_type_to_str(det.alert_type),
                           0.0f,
-                          "recovery_grace_elapsed");
+                          "recovery_grace_elapsed",
+                          g_throttle_target_ue_id);
         g_throttle_active  = 0;
         g_throttle_last_ms = now_ms;
         g_sev0_since_ms    = 0;
