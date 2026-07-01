@@ -26,6 +26,7 @@
 SESSION="xapp_c"
 RIC_BIN="/home/telmat/flexric/build/examples/ric/nearRT-RIC"
 XAPP_BIN="/home/telmat/flexric/build/examples/xApp/c/monitor/xapp_sec_moni"
+MITIGATE_BIN="/home/telmat/flexric/build/examples/xApp/c/monitor/xapp_sec_mitigate"
 XAPP_CONF="/home/telmat/sec-xapp/my_xapp_kpm.conf"
 XAPP_DIR="/home/telmat/sec-xapp"
 
@@ -67,6 +68,7 @@ done
 tmux kill-session -t "$SESSION" 2>/dev/null
 pkill -9 -f "nearRT-RIC" 2>/dev/null
 pkill -9 -f "xapp_sec_moni" 2>/dev/null
+pkill -9 -f "xapp_sec_mitigate" 2>/dev/null
 fuser -k -9 36421/sctp 2>/dev/null
 fuser -k -9 36422/sctp 2>/dev/null
 rm -f "$PHASE2_FLAG" "$MODE_FILE" "$IDS_MODE_FILE"
@@ -185,6 +187,18 @@ tmux send-keys -t "$SESSION:1" \
      echo '    5 = RF Burst        ./record_dataset.sh --label 5 --duration 600' && \
      echo '    6 = Jamming         ./record_dataset.sh --label 6 --duration 300' && \
      echo ''" Enter
+
+# =============================================================
+# Window 2: xapp_sec_mitigate — E2SM-RC mitigation (IPC server)
+# Start BEFORE xapp_sec_moni (it's the socket server)
+# =============================================================
+tmux new-window -t "$SESSION" -n "Mitigate"
+tmux send-keys -t "$SESSION:2" \
+    "echo '=== [Window 2] xapp_sec_mitigate — E2SM-RC Mitigation ===' && \
+     echo '  Menunggu Near-RT RIC siap (Window 0 Pane 0)...' && \
+     sleep 5 && \
+     '$MITIGATE_BIN' \
+       -c '$XAPP_CONF' --ue_f1ap 1 --mcc 001 --mnc 01 --sst 1" Enter
 
 # Kembali ke Window 0 saat attach
 tmux select-window -t "$SESSION:0"
