@@ -661,18 +661,28 @@ app.layout = html.Div(style={"backgroundColor": BG, "minHeight": "100vh",
     # Loading wrapper
     dcc.Loading(type="circle", color=ACCENT, children=[
 
-        # Metric cards (quality)
-        html.Div(id="metric-cards", style={"display": "grid",
-            "gridTemplateColumns": "repeat(6, 1fr)", "gap": "10px",
-            "marginBottom": "10px"}),
+        # Top stats and table container
+        html.Div(style={"display": "grid", "gridTemplateColumns": "13fr 11fr", "gap": "14px", "marginBottom": "16px"}, children=[
+            # Left column: Quality metrics + Latency breakdown
+            html.Div(children=[
+                # Metric cards (quality)
+                html.Div(id="metric-cards", style={"display": "grid",
+                    "gridTemplateColumns": "repeat(6, 1fr)", "gap": "10px",
+                    "marginBottom": "10px"}),
 
-        # Latency breakdown (4 distinct latencies, not conflated)
-        html.Div("Latency Breakdown", style={"color": DIM, "fontSize": "11px",
-                 "textTransform": "uppercase", "letterSpacing": "0.5px",
-                 "margin": "4px 2px 6px"}),
-        html.Div(id="latency-cards", style={"display": "grid",
-            "gridTemplateColumns": "repeat(4, 1fr)", "gap": "10px",
-            "marginBottom": "16px"}),
+                # Latency breakdown
+                html.Div("Latency Breakdown", style={"color": DIM, "fontSize": "11px",
+                         "textTransform": "uppercase", "letterSpacing": "0.5px",
+                         "margin": "8px 2px 6px"}),
+                html.Div(id="latency-cards", style={"display": "grid",
+                    "gridTemplateColumns": "repeat(4, 1fr)", "gap": "10px"}),
+            ]),
+
+            # Right column: Per-stage comparison table
+            html.Div(id="stage-table", style={"backgroundColor": CARD, "borderRadius": "10px",
+                                               "padding": "16px", "border": f"1px solid {BORD}",
+                                               "display": "flex", "flexDirection": "column", "justifyContent": "center"}),
+        ]),
 
         # Throughput row
         html.Div(style={"display": "grid", "gridTemplateColumns": "1fr 1fr",
@@ -719,9 +729,7 @@ app.layout = html.Div(style={"backgroundColor": BG, "minHeight": "100vh",
             ]),
         ]),
 
-        # Per-stage comparison table
-        html.Div(id="stage-table", style={"backgroundColor": CARD, "borderRadius": "10px",
-                                           "padding": "16px", "border": f"1px solid {BORD}"}),
+
 
     ]),
 
