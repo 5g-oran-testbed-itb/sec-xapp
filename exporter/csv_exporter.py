@@ -78,9 +78,9 @@ g_ue_mitigation_active    = Gauge("xapp_ue_mitigation_active",
                                   "Per-UE E2SM-RC throttle active (1) or restored (0)", ["rnti"])
 g_ue_mitigation_prb_limit = Gauge("xapp_ue_mitigation_prb_limit",
                                   "Per-UE current PRB cap % under throttle (100=unrestricted)", ["rnti"])
-c_mitigations_applied     = Counter("xapp_mitigations_applied_total",
-                                    "Cumulative E2SM-RC THROTTLE control requests actually applied",
-                                    ["rnti", "attack"])
+c_mitigations_applied     = Gauge("xapp_mitigations_applied_total",
+                                  "Cumulative E2SM-RC THROTTLE control requests actually applied",
+                                  ["rnti", "attack"])
 
 _ATTACK_NAME = {0: "none", 1: "ul_flood", 2: "dl_flood", 3: "burst", 4: "roq"}
 
@@ -709,6 +709,7 @@ def mitigation_tail_loop():
                 file_handle.close()
                 file_handle = None
                 reader = None
+            c_mitigations_applied.clear()
             if newest:
                 log.info("Tailing new mitigation CSV: %s", newest)
                 file_handle = open(newest, newline="")

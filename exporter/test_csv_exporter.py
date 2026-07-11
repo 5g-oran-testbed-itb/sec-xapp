@@ -303,7 +303,7 @@ def test_parse_ue_alert_row_extracts_fields():
            "rule_mask": "0x01", "rule_stage": "2",
            "mse": "0.031500", "threshold": "0.025969", "alert_type": "ul_flood"}
     result = parse_ue_alert_row(raw)
-    assert result["rnti"] == "0x1a2b"
+    assert result["rnti"] == "6699"
     assert result["rule_stage"] == 2
     assert abs(result["mse"] - 0.0315) < 1e-6
     assert result["alert_type"] == 1  # ul_flood → 1
@@ -333,7 +333,7 @@ def test_parse_ue_feature_row_extracts_fields():
         "prb_direction": "0.43", "ul_efficiency": "6666.7", "label": "1",
     }
     result = parse_ue_feature_row(raw)
-    assert result["rnti"] == "0x2345"
+    assert result["rnti"] == "9029"
     assert abs(result["prb_usage_ul_ratio"] - 0.75) < 1e-6
     assert abs(result["thp_ul_kbps"] - 5000.0) < 1e-6
     assert abs(result["prb_direction"] - 0.43) < 1e-6
