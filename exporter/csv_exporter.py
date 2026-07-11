@@ -71,6 +71,7 @@ c_attacks_blocked = Counter("xapp_attacks_blocked_total",
                             "Cumulative attacks escalated to Stage 2 (mitigation triggered)",
                             ["rnti", "attack_type"])
 _ue_prev_stage = {}  # rnti -> last seen stage, to detect 0/1 → 2 transitions
+_ue_last_update = {}  # rnti -> last seen timestamp (float) for stale metric cleanup
 
 # ── E2SM-RC mitigation state (honest: logged after a confirmed Control Request) ──
 g_ue_mitigation_active    = Gauge("xapp_ue_mitigation_active",
@@ -136,6 +137,20 @@ ALERT_TYPE_MAP = {"none": 0, "ul_flood": 1, "dl_flood": 2,
 UE_ALERT_TYPE_MAP = {"none": 0, "ul_flood": 1, "dl_flood": 2, "burst": 3, "roq": 4}
 
 
+def normalize_rnti(rnti_raw: str) -> str:
+    """Normalize hex RNTI strings like '0x0005' or decimal like '5' to a consistent decimal string."""
+    if not rnti_raw:
+        return "0"
+    rnti_raw = rnti_raw.strip()
+    try:
+        if rnti_raw.startswith("0x") or rnti_raw.startswith("0X"):
+            return str(int(rnti_raw, 16))
+        else:
+            return str(int(float(rnti_raw)))
+    except (ValueError, TypeError):
+        return rnti_raw
+
+
 def parse_ue_alert_row(raw: dict) -> dict:
     """Parse one row from ue_alerts_*.csv. Returns typed dict."""
     try:
@@ -147,7 +162,7 @@ def parse_ue_alert_row(raw: dict) -> dict:
     except (ValueError, TypeError):
         mse = 0.0
     return {
-        "rnti":       raw.get("rnti", "0x0000"),
+        "rnti":       normalize_rnti(raw.get("rnti", "0x0000")),
         "rule_stage": stage,
         "mse":        mse,
         "alert_type": UE_ALERT_TYPE_MAP.get(raw.get("alert_type", "none"), 0),
@@ -163,7 +178,7 @@ UE_FEATURE_FLOAT_COLS = [
 
 def parse_ue_feature_row(raw: dict) -> dict:
     """Parse one row from per_ue_training_*.csv. Returns typed dict."""
-    out = {"rnti": raw.get("rnti", "0x0000")}
+    out = {"rnti": normalize_rnti(raw.get("rnti", "0x0000"))}
     for col in UE_FEATURE_FLOAT_COLS:
         v = raw.get(col, "")
         try:
@@ -182,7 +197,7 @@ def parse_mitigation_row(raw: dict) -> dict:
     return {
         "epoch_ms": raw.get("epoch_ms", ""),
         "action":   (raw.get("action", "") or "").strip().upper(),
-        "rnti":     (raw.get("rnti", "") or "").strip(),
+        "rnti":     normalize_rnti((raw.get("rnti", "") or "").strip()),
         "prb_limit": prb,
         "attack":   (raw.get("attack", "") or "").strip(),
     }
@@ -588,6 +603,7 @@ def ue_alert_tail_loop():
                         continue
                     row = parse_ue_alert_row(dict(zip(reader.fieldnames, raw)))
                     rnti = row["rnti"]
+                    _ue_last_update[rnti] = time.time()
                     stage = row["rule_stage"]
                     g_ue_mse.labels(rnti=rnti).set(row["mse"])
                     g_ue_alert_type.labels(rnti=rnti).set(row["alert_type"])
@@ -635,12 +651,28 @@ def ue_feature_tail_loop():
                         continue
                     row = parse_ue_feature_row(dict(zip(reader.fieldnames, raw)))
                     rnti = row["rnti"]
+                    _ue_last_update[rnti] = time.time()
                     g_ue_prb_ul.labels(rnti=rnti).set(row["prb_usage_ul_ratio"])
                     g_ue_prb_dl.labels(rnti=rnti).set(row["prb_usage_dl_ratio"])
                     g_ue_thp_ul_kbps.labels(rnti=rnti).set(row["thp_ul_kbps"])
                     g_ue_thp_dl_kbps.labels(rnti=rnti).set(row["thp_dl_kbps"])
                     g_ue_prb_direction.labels(rnti=rnti).set(row["prb_direction"])
                     g_ue_ul_efficiency.labels(rnti=rnti).set(row["ul_efficiency"])
+
+        # Stale RNTI cleanup (no updates for > 10.0 seconds)
+        now = time.time()
+        stale_rntis = [r for r, last_t in _ue_last_update.items() if now - last_t > 10.0]
+        for r in stale_rntis:
+            log.info("Removing stale RNTI: %s", r)
+            for g in [g_ue_prb_ul, g_ue_prb_dl, g_ue_thp_ul_kbps, g_ue_thp_dl_kbps,
+                      g_ue_prb_direction, g_ue_ul_efficiency, g_ue_mse,
+                      g_ue_alert_type, g_ue_stage, g_ue_mitigation_active,
+                      g_ue_mitigation_prb_limit]:
+                try:
+                    g.remove(r)
+                except KeyError:
+                    pass
+            _ue_last_update.pop(r, None)
 
         time.sleep(0.5)
 
