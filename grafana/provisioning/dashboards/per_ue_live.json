@@ -76,7 +76,7 @@
       },
       "targets": [
         {
-          "expr": "count(xapp_ue_thp_ul_kbps > 0) or vector(0)",
+          "expr": "count(xapp_ue_thp_ul_kbps) or vector(0)",
           "instant": true,
           "legendFormat": ""
         }
