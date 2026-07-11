@@ -994,7 +994,7 @@
       },
       "targets": [
         {
-          "expr": "sum(xapp_attacks_blocked_total) or vector(0)",
+          "expr": "sum(xapp_mitigations_applied_total) or vector(0)",
           "instant": true,
           "legendFormat": "",
           "datasource": {
