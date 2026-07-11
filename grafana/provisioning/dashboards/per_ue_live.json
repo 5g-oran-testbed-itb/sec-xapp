@@ -8,7 +8,7 @@
     "live"
   ],
   "timezone": "browser",
-  "refresh": "5s",
+  "refresh": "1s",
   "time": {
     "from": "now-10m",
     "to": "now"

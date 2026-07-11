@@ -589,8 +589,18 @@ def ue_alert_tail_loop():
                 log.info("Tailing new UE alert CSV: %s", newest)
                 file_handle = open(newest, newline="")
                 reader = csv.DictReader(file_handle)
-                for _ in reader:
-                    pass  # skip existing rows on first open
+                for raw_row in reader:
+                    row = parse_ue_alert_row(raw_row)
+                    rnti = row["rnti"]
+                    _ue_last_update[rnti] = time.time()
+                    stage = row["rule_stage"]
+                    g_ue_mse.labels(rnti=rnti).set(row["mse"])
+                    g_ue_alert_type.labels(rnti=rnti).set(row["alert_type"])
+                    g_ue_stage.labels(rnti=rnti).set(stage)
+                    if stage >= 2 and _ue_prev_stage.get(rnti, 0) < 2:
+                        atype = _ATTACK_NAME.get(row["alert_type"], "unknown")
+                        c_attacks_blocked.labels(rnti=rnti, attack_type=atype).inc()
+                    _ue_prev_stage[rnti] = stage
             current_file = newest
 
         if file_handle and reader:
@@ -637,8 +647,16 @@ def ue_feature_tail_loop():
                 log.info("Tailing new UE feature CSV: %s", newest)
                 file_handle = open(newest, newline="")
                 reader = csv.DictReader(file_handle)
-                for _ in reader:
-                    pass  # skip existing rows on first open
+                for raw_row in reader:
+                    row = parse_ue_feature_row(raw_row)
+                    rnti = row["rnti"]
+                    _ue_last_update[rnti] = time.time()
+                    g_ue_prb_ul.labels(rnti=rnti).set(row["prb_usage_ul_ratio"])
+                    g_ue_prb_dl.labels(rnti=rnti).set(row["prb_usage_dl_ratio"])
+                    g_ue_thp_ul_kbps.labels(rnti=rnti).set(row["thp_ul_kbps"])
+                    g_ue_thp_dl_kbps.labels(rnti=rnti).set(row["thp_dl_kbps"])
+                    g_ue_prb_direction.labels(rnti=rnti).set(row["prb_direction"])
+                    g_ue_ul_efficiency.labels(rnti=rnti).set(row["ul_efficiency"])
             current_file = newest
 
         if file_handle and reader:
@@ -695,8 +713,8 @@ def mitigation_tail_loop():
                 log.info("Tailing new mitigation CSV: %s", newest)
                 file_handle = open(newest, newline="")
                 reader = csv.DictReader(file_handle)
-                for _ in reader:
-                    pass  # skip existing rows on first open
+                for raw_row in reader:
+                    update_mitigation_metrics(parse_mitigation_row(raw_row))
             current_file = newest
 
         if file_handle and reader:
