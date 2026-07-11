@@ -21,7 +21,7 @@ CSV_DIR            = os.getenv("CSV_DIR",            "/data/csv")
 UE_WINDOW_SIZE     = 30
 GRU_UE_THRESH      = 0.025969
 LSTM_UE_THRESH     = 0.025266
-XAPP_CYCLE_MS      = 120.0  # one xApp KPM/E2SM-RC cycle (mitigation control latency)
+XAPP_CYCLE_MS      = 500.0  # one xApp KPM/E2SM-RC cycle (mitigation control latency)
 _LAT_SAMPLE        = 300    # max windows/rows sampled for live latency profiling
 UE_ONNX_MODEL      = os.getenv("UE_ONNX_MODEL",      "/data/models/gru_ue_v4.onnx")
 LSTM_UE_ONNX_MODEL = os.getenv("LSTM_UE_ONNX_MODEL", "/data/models/lstm_ue_v4.onnx")
@@ -380,6 +380,8 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
     timestamps = np.array([int(r["timestamp_ms"]) for r in rows])
     prb_dl_arr = [float(r.get("prb_usage_dl_ratio", 0)) for r in rows]
     prb_ul_arr = [float(r.get("prb_usage_ul_ratio", 0)) for r in rows]
+    thp_dl_arr = [float(r.get("thp_dl_kbps", 0)) for r in rows]
+    thp_ul_arr = [float(r.get("thp_ul_kbps", 0)) for r in rows]
 
     # ── Window-level evaluation mask (drop first seq_len-1 rows per RNTI) ─────────
     wmask    = is_window
@@ -518,6 +520,8 @@ def run_eval(attack_filter, det_mode="hybrid", csv_path=None):
         "timestamps":  timestamps.tolist(),
         "prb_dl":      prb_dl_arr,
         "prb_ul":      prb_ul_arr,
+        "thp_dl":      thp_dl_arr,
+        "thp_ul":      thp_ul_arr,
         "labels":      labels.tolist(),
         "final_sev":   final_sev.tolist(),
         "lstm_scores": active_scores.tolist(),
@@ -670,27 +674,49 @@ app.layout = html.Div(style={"backgroundColor": BG, "minHeight": "100vh",
             "gridTemplateColumns": "repeat(4, 1fr)", "gap": "10px",
             "marginBottom": "16px"}),
 
-        # Charts row
-        html.Div(style={"display": "grid", "gridTemplateColumns": "3fr 2fr",
+        # Throughput row
+        html.Div(style={"display": "grid", "gridTemplateColumns": "1fr 1fr",
                          "gap": "14px", "marginBottom": "14px"}, children=[
             html.Div(style={"backgroundColor": CARD, "borderRadius": "10px",
                              "padding": "12px", "border": f"1px solid {BORD}"}, children=[
-                dcc.Graph(id="graph-prb", style={"height": "320px"},
-                          config={"displayModeBar": False}),
+                dcc.Graph(id="graph-thp-ul", style={"height": "320px"},
+                           config={"displayModeBar": False}),
             ]),
+            html.Div(style={"backgroundColor": CARD, "borderRadius": "10px",
+                             "padding": "12px", "border": f"1px solid {BORD}"}, children=[
+                dcc.Graph(id="graph-thp-dl", style={"height": "320px"},
+                           config={"displayModeBar": False}),
+            ]),
+        ]),
+
+        # PRB utilization row
+        html.Div(style={"display": "grid", "gridTemplateColumns": "1fr 1fr",
+                         "gap": "14px", "marginBottom": "14px"}, children=[
+            html.Div(style={"backgroundColor": CARD, "borderRadius": "10px",
+                             "padding": "12px", "border": f"1px solid {BORD}"}, children=[
+                dcc.Graph(id="graph-prb-ul", style={"height": "320px"},
+                           config={"displayModeBar": False}),
+            ]),
+            html.Div(style={"backgroundColor": CARD, "borderRadius": "10px",
+                             "padding": "12px", "border": f"1px solid {BORD}"}, children=[
+                dcc.Graph(id="graph-prb-dl", style={"height": "320px"},
+                           config={"displayModeBar": False}),
+            ]),
+        ]),
+
+        # ROC Curve & Anomaly Score row
+        html.Div(style={"display": "grid", "gridTemplateColumns": "1fr 1fr",
+                         "gap": "14px", "marginBottom": "14px"}, children=[
             html.Div(style={"backgroundColor": CARD, "borderRadius": "10px",
                              "padding": "12px", "border": f"1px solid {BORD}"}, children=[
                 dcc.Graph(id="graph-roc", style={"height": "320px"},
                           config={"displayModeBar": False}),
             ]),
-        ]),
-
-        # LSTM score time-series
-        html.Div(style={"backgroundColor": CARD, "borderRadius": "10px",
-                         "padding": "12px", "marginBottom": "14px",
-                         "border": f"1px solid {BORD}"}, children=[
-            dcc.Graph(id="graph-lstm", style={"height": "220px"},
-                      config={"displayModeBar": False}),
+            html.Div(style={"backgroundColor": CARD, "borderRadius": "10px",
+                             "padding": "12px", "border": f"1px solid {BORD}"}, children=[
+                dcc.Graph(id="graph-lstm", style={"height": "320px"},
+                          config={"displayModeBar": False}),
+            ]),
         ]),
 
         # Per-stage comparison table
@@ -819,7 +845,10 @@ def store_mode(*_):
     Output("status-bar",    "children"),
     Output("metric-cards",  "children"),
     Output("latency-cards", "children"),
-    Output("graph-prb",     "figure"),
+    Output("graph-thp-ul",  "figure"),
+    Output("graph-thp-dl",  "figure"),
+    Output("graph-prb-ul",  "figure"),
+    Output("graph-prb-dl",  "figure"),
     Output("graph-roc",     "figure"),
     Output("graph-lstm",    "figure"),
     Output("stage-table",   "children"),
@@ -848,7 +877,7 @@ def update_dashboard(attack_filter, det_mode, csv_source):
         cards = [_metric_card("—", "—") for _ in range(6)]
         lat_cards = [_metric_card("—", "—") for _ in range(4)]
         empty_table = html.P("Belum ada data — pilih skenario serangan untuk memulai.", style={"color": DIM})
-        return msg, cards, lat_cards, empty_fig, empty_fig, empty_fig, empty_table
+        return msg, cards, lat_cards, empty_fig, empty_fig, empty_fig, empty_fig, empty_fig, empty_fig, empty_table
 
     # Run evaluation
     result = run_eval(attack_filter, det_mode, csv_path=resolved_csv)
@@ -856,7 +885,7 @@ def update_dashboard(attack_filter, det_mode, csv_source):
     if result is None:
         csv_name = os.path.basename(resolved_csv) if resolved_csv else "?"
         return (html.Span(f"⚠ CSV kosong atau tidak terbaca: {csv_name}", style={"color": GOLD}),
-                [], empty_fig, empty_fig, empty_fig, html.P("Tidak ada data.", style={"color": DIM}))
+                [], [], empty_fig, empty_fig, empty_fig, empty_fig, empty_fig, empty_fig, html.P("Tidak ada data.", style={"color": DIM}))
 
     ml_name   = "GRU" if det_mode in ("gru", "gru_hybrid", "hybrid") else "LSTM"
     ml_thresh = GRU_UE_THRESH if det_mode in ("gru", "gru_hybrid", "hybrid") else LSTM_UE_THRESH
@@ -919,17 +948,13 @@ def update_dashboard(attack_filter, det_mode, csv_source):
                      "s", GREEN if (e2e_s is not None and e2e_s < 5) else GOLD),
     ]
 
-    # PRB time-series
+    # PRB & Throughput time-series
     ts = result["timestamps"]
     labels = result["labels"]
     t_rel = [(t - ts[0]) / 1000.0 for t in ts]
     det_flags = result["final_sev"]
 
-    fig_prb = go.Figure()
-
     # Shade attack regions — build shapes/annotations as lists and apply ONCE.
-    # (fig.add_vrect in a loop is O(n^2): each call re-validates all shapes,
-    #  taking ~65s for ~500 regions on large datasets → perpetual spinner.)
     attack_colors = {"1": "rgba(255,107,53,0.12)", "2": "rgba(255,71,87,0.12)",
                      "3": "rgba(255,165,2,0.12)",  "4": "rgba(255,99,72,0.12)"}
     shapes = []
@@ -955,32 +980,64 @@ def update_dashboard(attack_filter, det_mode, csv_source):
                            x0=seg_start, x1=t_rel[-1], y0=0, y1=1,
                            fillcolor=color, layer="below", line_width=0))
 
-    # 80% threshold line as a shape (avoid add_hline re-validation too)
+    # 80% threshold line specifically for PRB charts
+    import copy
+    shapes_prb = copy.deepcopy(shapes)
+    annotations_prb = copy.deepcopy(annotations)
     if t_rel:
-        shapes.append(dict(type="line", xref="x", yref="y",
-                           x0=t_rel[0], x1=t_rel[-1], y0=80, y1=80,
-                           line=dict(color="#555", width=1, dash="dash")))
-        annotations.append(dict(x=t_rel[-1], y=80, yref="y", text="80% threshold",
-                                showarrow=False, font=dict(color=DIM, size=10),
-                                xanchor="right", yanchor="bottom"))
+        shapes_prb.append(dict(type="line", xref="x", yref="y",
+                               x0=t_rel[0], x1=t_rel[-1], y0=80, y1=80,
+                               line=dict(color="#555", width=1, dash="dash")))
+        annotations_prb.append(dict(x=t_rel[-1], y=80, yref="y", text="80% threshold",
+                                    showarrow=False, font=dict(color=DIM, size=10),
+                                    xanchor="right", yanchor="bottom"))
 
-    fig_prb.add_trace(go.Scatter(x=t_rel, y=[v*100 for v in result["prb_dl"]],
-                                  name="PRB DL (%)", line=dict(color=ACCENT, width=1.5)))
-    fig_prb.add_trace(go.Scatter(x=t_rel, y=[v*100 for v in result["prb_ul"]],
-                                  name="PRB UL (%)", line=dict(color=RED, width=1.5)))
+    # Throughput UL
+    fig_thp_ul = go.Figure()
+    fig_thp_ul.add_trace(go.Scatter(x=t_rel, y=result["thp_ul"],
+                                    name="Throughput UL (kbps)", line=dict(color=RED, width=1.5)))
+    fig_thp_ul.update_layout(title=f"Throughput UL — {attack_name}",
+                             xaxis_title="Waktu (detik)", yaxis_title="Throughput (kbps)",
+                             shapes=shapes, annotations=annotations,
+                             **_layout_base())
 
-    # Detection markers
+    # Throughput DL
+    fig_thp_dl = go.Figure()
+    fig_thp_dl.add_trace(go.Scatter(x=t_rel, y=result["thp_dl"],
+                                    name="Throughput DL (kbps)", line=dict(color=ACCENT, width=1.5)))
+    fig_thp_dl.update_layout(title=f"Throughput DL — {attack_name}",
+                             xaxis_title="Waktu (detik)", yaxis_title="Throughput (kbps)",
+                             shapes=shapes, annotations=annotations,
+                             **_layout_base())
+
+    # PRB UL
+    fig_prb_ul = go.Figure()
+    fig_prb_ul.add_trace(go.Scatter(x=t_rel, y=[v*100 for v in result["prb_ul"]],
+                                    name="PRB UL (%)", line=dict(color=RED, width=1.5)))
     det_times = [t_rel[i] for i, s in enumerate(det_flags) if s >= 1]
-    det_prb   = [(result["prb_ul"][i] + result["prb_dl"][i]) * 50 for i, s in enumerate(det_flags) if s >= 1]
     if det_times:
-        fig_prb.add_trace(go.Scatter(x=det_times, y=det_prb, mode="markers",
-                                      name="Detection",
-                                      marker=dict(symbol="x", size=6, color=GREEN)))
+        det_prb_ul = [result["prb_ul"][i] * 100 for i, s in enumerate(det_flags) if s >= 1]
+        fig_prb_ul.add_trace(go.Scatter(x=det_times, y=det_prb_ul, mode="markers",
+                                        name="Detection",
+                                        marker=dict(symbol="x", size=6, color=GREEN)))
+    fig_prb_ul.update_layout(title=f"PRB Utilization UL — {attack_name}",
+                             xaxis_title="Waktu (detik)", yaxis_title="PRB (%)",
+                             yaxis_range=[0, 105], shapes=shapes_prb, annotations=annotations_prb,
+                             **_layout_base())
 
-    fig_prb.update_layout(title=f"PRB Utilization — {attack_name}",
-                           xaxis_title="Waktu (detik)", yaxis_title="PRB (%)",
-                           yaxis_range=[0, 105], shapes=shapes, annotations=annotations,
-                           **_layout_base())
+    # PRB DL
+    fig_prb_dl = go.Figure()
+    fig_prb_dl.add_trace(go.Scatter(x=t_rel, y=[v*100 for v in result["prb_dl"]],
+                                    name="PRB DL (%)", line=dict(color=ACCENT, width=1.5)))
+    if det_times:
+        det_prb_dl = [result["prb_dl"][i] * 100 for i, s in enumerate(det_flags) if s >= 1]
+        fig_prb_dl.add_trace(go.Scatter(x=det_times, y=det_prb_dl, mode="markers",
+                                        name="Detection",
+                                        marker=dict(symbol="x", size=6, color=GREEN)))
+    fig_prb_dl.update_layout(title=f"PRB Utilization DL — {attack_name}",
+                             xaxis_title="Waktu (detik)", yaxis_title="PRB (%)",
+                             yaxis_range=[0, 105], shapes=shapes_prb, annotations=annotations_prb,
+                             **_layout_base())
 
     # ROC curve
     fig_roc = go.Figure()
@@ -1061,7 +1118,7 @@ def update_dashboard(attack_filter, det_mode, csv_source):
         ]),
     ])
 
-    return status, cards, lat_cards, fig_prb, fig_roc, fig_lstm, table
+    return status, cards, lat_cards, fig_thp_ul, fig_thp_dl, fig_prb_ul, fig_prb_dl, fig_roc, fig_lstm, table
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
