@@ -665,11 +665,11 @@
     {
       "id": 8,
       "type": "timeseries",
-      "title": "PRB Utilization per UE",
+      "title": "PRB Utilization UL per UE",
       "gridPos": {
         "x": 0,
         "y": 11,
-        "w": 12,
+        "w": 8,
         "h": 6
       },
       "fieldConfig": {
@@ -691,10 +691,6 @@
         {
           "expr": "xapp_ue_prb_ul",
           "legendFormat": "PRB UL {{rnti}}"
-        },
-        {
-          "expr": "xapp_ue_prb_dl",
-          "legendFormat": "PRB DL {{rnti}}"
         }
       ]
     },
@@ -703,9 +699,9 @@
       "type": "timeseries",
       "title": "PRB Direction & UL Efficiency per UE",
       "gridPos": {
-        "x": 12,
+        "x": 16,
         "y": 11,
-        "w": 12,
+        "w": 8,
         "h": 6
       },
       "fieldConfig": {
@@ -1115,6 +1111,38 @@
         {
           "expr": "xapp_ue_thp_dl_kbps",
           "legendFormat": "DL {{rnti}}"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "PRB Utilization DL per UE",
+      "gridPos": {
+        "x": 8,
+        "y": 11,
+        "w": 8,
+        "h": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "xapp_ue_prb_dl",
+          "legendFormat": "PRB DL {{rnti}}"
         }
       ]
     }
