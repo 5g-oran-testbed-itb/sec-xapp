@@ -345,3 +345,90 @@ def test_parse_ue_feature_row_missing_col_defaults_zero():
     assert result["thp_ul_kbps"] == 0.0
     assert result["prb_usage_dl_ratio"] == 0.0
     assert result["ul_efficiency"] == 0.0
+
+
+# ── mitigation event parser tests ────────────────────────────────────────────
+
+MIT_HEADER = ["epoch_ms", "action", "rnti", "ue_id", "prb_limit", "attack", "confidence"]
+
+def _make_mit_row(**kwargs):
+    defaults = {
+        "epoch_ms": "1000", "action": "THROTTLE", "rnti": "17921",
+        "ue_id": "17921", "prb_limit": "0", "attack": "ul_flood",
+        "confidence": "0.98",
+    }
+    defaults.update({k: str(v) for k, v in kwargs.items()})
+    return defaults
+
+def test_parse_mitigation_row_throttle():
+    from csv_exporter import parse_mitigation_row
+    row = parse_mitigation_row(_make_mit_row(action="THROTTLE", rnti="17921", prb_limit="0"))
+    assert row["action"] == "THROTTLE"
+    assert row["rnti"] == "17921"
+    assert row["prb_limit"] == 0
+    assert row["attack"] == "ul_flood"
+
+def test_parse_mitigation_row_restore_defaults_prb_100():
+    from csv_exporter import parse_mitigation_row
+    row = parse_mitigation_row(_make_mit_row(action="RESTORE", prb_limit="100"))
+    assert row["action"] == "RESTORE"
+    assert row["prb_limit"] == 100
+
+
+def test_update_mitigation_metrics_throttle_then_restore():
+    from csv_exporter import (
+        parse_mitigation_row, update_mitigation_metrics,
+        g_ue_mitigation_active, g_ue_mitigation_prb_limit, c_mitigations_applied,
+    )
+    # THROTTLE → active=1, prb_limit=0, counter +1
+    before = c_mitigations_applied.labels(rnti="17921", attack="ul_flood")._value.get()
+    update_mitigation_metrics(parse_mitigation_row(
+        _make_mit_row(action="THROTTLE", rnti="17921", prb_limit="0", attack="ul_flood")))
+    assert g_ue_mitigation_active.labels(rnti="17921")._value.get() == 1
+    assert g_ue_mitigation_prb_limit.labels(rnti="17921")._value.get() == 0
+    assert c_mitigations_applied.labels(rnti="17921", attack="ul_flood")._value.get() == before + 1
+
+    # RESTORE → active=0, prb_limit=100, counter unchanged
+    update_mitigation_metrics(parse_mitigation_row(
+        _make_mit_row(action="RESTORE", rnti="17921", prb_limit="100", attack="ul_flood")))
+    assert g_ue_mitigation_active.labels(rnti="17921")._value.get() == 0
+    assert g_ue_mitigation_prb_limit.labels(rnti="17921")._value.get() == 100
+    assert c_mitigations_applied.labels(rnti="17921", attack="ul_flood")._value.get() == before + 1
+
+
+def test_read_active_threshold_sidecar(tmp_path):
+    from csv_exporter import read_active_threshold, g_ue_threshold, g_ue_model_info
+    p = tmp_path / "xapp_active_threshold"
+    p.write_text("0.027047 lstm_ue_v6\n")
+    read_active_threshold(str(p))
+    assert abs(g_ue_threshold._value.get() - 0.027047) < 1e-9
+    assert g_ue_model_info.labels(model="lstm_ue_v6")._value.get() == 1
+
+
+def test_read_active_threshold_missing_file_noop(tmp_path):
+    from csv_exporter import read_active_threshold
+    # Should not raise when the sidecar does not exist yet.
+    read_active_threshold(str(tmp_path / "does_not_exist"))
+
+
+def test_read_active_threshold_sidecar_switch(tmp_path):
+    from csv_exporter import read_active_threshold, g_ue_threshold, g_ue_model_info
+    p = tmp_path / "xapp_active_threshold"
+
+    # Start with GRU
+    p.write_text("0.026026 gru_ue_v5\n")
+    read_active_threshold(str(p))
+    assert abs(g_ue_threshold._value.get() - 0.026026) < 1e-9
+    assert g_ue_model_info.labels(model="gru_ue_v5")._value.get() == 1
+    assert g_ue_model_info.labels(model="lstm_ue_v6")._value.get() == 0
+
+    # Switch to LSTM
+    p.write_text("0.027047 lstm_ue_v6\n")
+    read_active_threshold(str(p))
+    assert abs(g_ue_threshold._value.get() - 0.027047) < 1e-9
+    assert g_ue_model_info.labels(model="gru_ue_v5")._value.get() == 0
+    assert g_ue_model_info.labels(model="lstm_ue_v6")._value.get() == 1
+
+
+
+

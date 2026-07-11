@@ -61,6 +61,7 @@ static ids_mode_t   g_ids_mode     = IDS_MODE_RULE_ONLY;
 static OrtSession*  sess_ml        = NULL;
 static float        g_ue_threshold = 0.0f;
 static FILE*        g_ue_alert_fp  = NULL;
+static FILE*        g_mit_fp       = NULL;   /* mitigation_events_*.csv — honest E2SM-RC control log */
 static int          g_cell_enabled = 1; /* --no-cell disables cell-level detection + CSV */
 static int          g_csv_enabled  = 1; /* --no-csv  disables all training CSV writes */
 
@@ -157,16 +158,19 @@ static float load_ue_threshold(const char *json_path) {
 static void init_onnx_ue(void) {
     const char *model_path = NULL;
     const char *thr_path   = NULL;
+    const char *model_name = "unknown";
     switch (g_ids_mode) {
         case IDS_MODE_LSTM_ONLY:
         case IDS_MODE_LSTM_HYBRID:
-            model_path = "/home/telmat/sec-xapp/models/lstm_ue_v4.onnx";
-            thr_path   = "/home/telmat/sec-xapp/models/lstm_ue_v4_threshold.json";
+            model_path = "/home/telmat/sec-xapp/models/lstm_ue_v6.onnx";
+            thr_path   = "/home/telmat/sec-xapp/models/lstm_ue_v6_threshold.json";
+            model_name = "lstm_ue_v6";
             break;
         case IDS_MODE_GRU_ONLY:
         case IDS_MODE_GRU_HYBRID:
-            model_path = "/home/telmat/sec-xapp/models/gru_ue_v4.onnx";
-            thr_path   = "/home/telmat/sec-xapp/models/gru_ue_v4_threshold.json";
+            model_path = "/home/telmat/sec-xapp/models/gru_ue_v5.onnx";
+            thr_path   = "/home/telmat/sec-xapp/models/gru_ue_v5_threshold.json";
+            model_name = "gru_ue_v5";
             break;
         default:
             printf("[IDS-UE] RULE_ONLY mode — ONNX not loaded.\n");
@@ -178,6 +182,13 @@ static void init_onnx_ue(void) {
         return;
     }
     printf("[IDS-UE] Threshold: %.2f (from %s)\n", g_ue_threshold, thr_path);
+    {
+        FILE *tf = fopen("/tmp/xapp_active_threshold", "w");
+        if (tf) {
+            fprintf(tf, "%.6f %s\n", g_ue_threshold, model_name);
+            fclose(tf);
+        }
+    }
     if (!g_ort || !env || !session_options) {
         fprintf(stderr, "[IDS-UE] ONNX Runtime not initialized — call init_onnx() first.\n");
         return;
@@ -956,6 +967,17 @@ static void ipc_send_mitigate(const char* action, int prb_limit,
     ack_buf[n] = '\0';
     printf("[IPC] ACK received: %s\n", ack_buf);
     fflush(stdout);
+    if (g_mit_fp) {
+        struct timespec ts_mit;
+        clock_gettime(CLOCK_REALTIME, &ts_mit);
+        uint64_t epoch_ms = (uint64_t)ts_mit.tv_sec * 1000ULL
+                            + ts_mit.tv_nsec / 1000000ULL;
+        /* ue_id == RNTI at all call sites (g_throttle_target_ue_id = rnti). */
+        fprintf(g_mit_fp, "%llu,%s,%u,%u,%d,%s,%.4f\n",
+                (unsigned long long)epoch_ms, action, ue_id, ue_id,
+                prb_limit, attack ? attack : "unknown", (double)confidence);
+        fflush(g_mit_fp);
+    }
 }
 
 static void rc_send_prb_quota(int max_prb_pct)
@@ -1769,9 +1791,7 @@ static void sm_cb_kpm(sm_ag_if_rd_t const* rd, global_e2_node_id_t const* e2_nod
       /* Signal main() to apply/restore RC PRB throttle outside the mutex.
        * Restore is gated: if per-UE IDS is active, only restore when no
        * per-UE alert has fired in the last THROTTLE_RESTORE_MS (10s). */
-      int ue_ids_active = (g_ids_mode != IDS_MODE_RULE_ONLY);
-      int ue_recently_alerted = ue_ids_active
-          && ((kpm_now_ms - g_last_ue_alert_ms) < (uint64_t)THROTTLE_RESTORE_MS);
+      int ue_recently_alerted = ((kpm_now_ms - g_last_ue_alert_ms) < (uint64_t)THROTTLE_RESTORE_MS);
       if (final_sev == 2 && !g_throttle_active) {
         g_pending_throttle = 1; /* request throttle */
       } else if (final_sev == 0 && g_throttle_active && !ue_recently_alerted) {
@@ -1917,11 +1937,14 @@ static void sm_cb_kpm(sm_ag_if_rd_t const* rd, global_e2_node_id_t const* e2_nod
               float mse = run_inference_ue(ue_slot);
               ue_alert_type_t alert = decision_engine_ue(
                   ue_slot, rule, mse, g_ue_threshold, g_ids_mode, ids_now_ms);
+              int ue_anomalous = (rule.severity >= 1) || (mse > 0.0f && mse > g_ue_threshold);
+              if (ue_anomalous) {
+                  g_last_ue_alert_ms = (uint64_t)ids_now_ms;
+              }
               if (alert != UE_ALERT_NONE) {
                   alert_log_ue(rnti, rule, mse, g_ue_threshold, alert, ids_now_ms);
                   /* Per-UE alert → request E2SM-RC throttle; update last-alert timestamp
                    * so cell-level restore path does not fire while attack is ongoing. */
-                  g_last_ue_alert_ms = (uint64_t)ids_now_ms;
                   g_throttle_target_ue_id = rnti;
                   if (!g_throttle_active)
                       g_pending_throttle = 1;
@@ -2434,6 +2457,23 @@ int main(int argc, char *argv[])
   }
   defer({ if (g_ue_alert_fp) fclose(g_ue_alert_fp); });
 
+  /* Open mitigation-events CSV — one row per confirmed E2SM-RC control */
+  {
+      char mit_path[256];
+      time_t now_m = time(NULL);
+      struct tm *tm_m = localtime(&now_m);
+      strftime(mit_path, sizeof(mit_path),
+               "/home/telmat/sec-xapp/csv/mitigation_events_%Y%m%d_%H%M%S.csv",
+               tm_m);
+      g_mit_fp = fopen(mit_path, "w");
+      if (g_mit_fp) {
+          fprintf(g_mit_fp,
+                  "epoch_ms,action,rnti,ue_id,prb_limit,attack,confidence\n");
+          fflush(g_mit_fp);
+      }
+  }
+  defer({ if (g_mit_fp) fclose(g_mit_fp); });
+
   /* Per-UE ONNX session — must be after init_onnx() */
   init_onnx_ue();
   ue_tracker_init(&g_ue_tracker, NULL); /* alerts → stderr; pass a FILE* for file logging */
@@ -2682,9 +2722,9 @@ int main(int argc, char *argv[])
     if (g_pending_throttle == 1 && !g_throttle_active
         && (now_ms - g_throttle_last_ms > THROTTLE_COOLDOWN_MS)) {
       ids_detection_state_t det = ids_get_detection_state();
-      printf("[DETECT] CRITICAL — sending THROTTLE to mitigator (max=5%%) target_ue_id=%u\n", g_throttle_target_ue_id);
+      printf("[DETECT] CRITICAL — sending BLOCK to mitigator (max=0%%) target_ue_id=%u\n", g_throttle_target_ue_id);
       fflush(stdout);
-      ipc_send_mitigate("THROTTLE", 5,
+      ipc_send_mitigate("THROTTLE", 0,
                         alert_type_to_str(det.alert_type),
                         g_last_anomaly_score,
                         "stage2_persistence_confirmed",

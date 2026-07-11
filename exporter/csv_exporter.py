@@ -72,6 +72,15 @@ c_attacks_blocked = Counter("xapp_attacks_blocked_total",
                             ["rnti", "attack_type"])
 _ue_prev_stage = {}  # rnti -> last seen stage, to detect 0/1 → 2 transitions
 
+# ── E2SM-RC mitigation state (honest: logged after a confirmed Control Request) ──
+g_ue_mitigation_active    = Gauge("xapp_ue_mitigation_active",
+                                  "Per-UE E2SM-RC throttle active (1) or restored (0)", ["rnti"])
+g_ue_mitigation_prb_limit = Gauge("xapp_ue_mitigation_prb_limit",
+                                  "Per-UE current PRB cap % under throttle (100=unrestricted)", ["rnti"])
+c_mitigations_applied     = Counter("xapp_mitigations_applied_total",
+                                    "Cumulative E2SM-RC THROTTLE control requests actually applied",
+                                    ["rnti", "attack"])
+
 _ATTACK_NAME = {0: "none", 1: "ul_flood", 2: "dl_flood", 3: "burst", 4: "roq"}
 
 g_ue_thp_ul_kbps    = Gauge("xapp_ue_thp_ul_kbps",    "Per-UE UL throughput (kbps)",  ["rnti"])
@@ -97,6 +106,12 @@ KNOWN_EVAL_UE = {
     "gru_hybrid":  {"recall": 0.961, "f1": 0.954, "fpr": 0.0514, "det_lat": 4.04,  "mit_lat": 4.16,
                     "ul_flood": 0.979, "dl_flood": 0.968, "burst": 0.988, "roq": 0.922},
 }
+
+# ── Active per-UE ML threshold (mirrors whatever model the xApp loaded) ──────
+g_ue_threshold  = Gauge("xapp_ue_threshold", "Active per-UE ML decision threshold (loaded model)")
+g_ue_model_info = Gauge("xapp_ue_model_info", "Active per-UE model (value=1)", ["model"])
+ACTIVE_THRESHOLD_PATH = os.getenv("ACTIVE_THRESHOLD_PATH", "/tmp/xapp_active_threshold")
+_model_info_last = {"model": None}
 
 # ── Shared state: latest CSV row for GRU thread ──────────────────────────────
 _latest_row: dict = {}
@@ -156,6 +171,58 @@ def parse_ue_feature_row(raw: dict) -> dict:
         except (ValueError, TypeError):
             out[col] = 0.0
     return out
+
+
+def parse_mitigation_row(raw: dict) -> dict:
+    """Parse one row from mitigation_events_*.csv. Returns typed dict."""
+    try:
+        prb = int(float(raw.get("prb_limit", 100)))
+    except (TypeError, ValueError):
+        prb = 100
+    return {
+        "epoch_ms": raw.get("epoch_ms", ""),
+        "action":   (raw.get("action", "") or "").strip().upper(),
+        "rnti":     (raw.get("rnti", "") or "").strip(),
+        "prb_limit": prb,
+        "attack":   (raw.get("attack", "") or "").strip(),
+    }
+
+
+def update_mitigation_metrics(row: dict) -> None:
+    """Apply one parsed mitigation event to the per-RNTI gauges/counter."""
+    rnti = row["rnti"]
+    if not rnti:
+        return
+    if row["action"] == "THROTTLE":
+        g_ue_mitigation_active.labels(rnti=rnti).set(1)
+        g_ue_mitigation_prb_limit.labels(rnti=rnti).set(row["prb_limit"])
+        c_mitigations_applied.labels(rnti=rnti, attack=row["attack"] or "unknown").inc()
+    elif row["action"] == "RESTORE":
+        g_ue_mitigation_active.labels(rnti=rnti).set(0)
+        g_ue_mitigation_prb_limit.labels(rnti=rnti).set(row["prb_limit"])
+
+
+def read_active_threshold(path: str = None) -> None:
+    """Read '<value> <model_name>' sidecar written by the xApp; set threshold gauges."""
+    path = path or ACTIVE_THRESHOLD_PATH
+    try:
+        with open(path) as f:
+            parts = f.read().split()
+    except OSError:
+        return
+    if not parts:
+        return
+    try:
+        g_ue_threshold.set(float(parts[0]))
+    except ValueError:
+        return
+    if len(parts) >= 2:
+        model = parts[1]
+        if _model_info_last["model"] and _model_info_last["model"] != model:
+            g_ue_model_info.labels(model=_model_info_last["model"]).set(0)
+        g_ue_model_info.labels(model=model).set(1)
+        _model_info_last["model"] = model
+
 
 # ── GRU inference config ─────────────────────────────────────────────────────
 GRU_MODEL_A  = os.getenv("GRU_MODEL_A", "/data/models/gru_autoencoder_A_v1.pt")
@@ -566,6 +633,42 @@ def ue_feature_tail_loop():
         time.sleep(0.5)
 
 
+def mitigation_tail_loop():
+    """Tail newest mitigation_events_*.csv and update per-RNTI mitigation metrics."""
+    current_file = None
+    file_handle  = None
+    reader       = None
+
+    while True:
+        newest = find_newest_csv(CSV_DIR, "mitigation_events_*.csv")
+
+        if newest != current_file:
+            if file_handle:
+                file_handle.close()
+                file_handle = None
+                reader = None
+            if newest:
+                log.info("Tailing new mitigation CSV: %s", newest)
+                file_handle = open(newest, newline="")
+                reader = csv.DictReader(file_handle)
+                for _ in reader:
+                    pass  # skip existing rows on first open
+            current_file = newest
+
+        if reader:
+            for raw in reader:
+                update_mitigation_metrics(parse_mitigation_row(raw))
+
+        time.sleep(POLL_INTERVAL)
+
+
+def threshold_watch_loop():
+    """Periodically refresh the active-threshold gauges from the sidecar file."""
+    while True:
+        read_active_threshold()
+        time.sleep(EVAL_POLL)
+
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -579,11 +682,15 @@ def main():
     t3 = threading.Thread(target=gru_inference_loop,   daemon=True, name="gru-infer")
     t4 = threading.Thread(target=ue_alert_tail_loop,   daemon=True, name="ue-alert-tail")
     t5 = threading.Thread(target=ue_feature_tail_loop, daemon=True, name="ue-feature-tail")
+    t6 = threading.Thread(target=mitigation_tail_loop, daemon=True, name="mitigation-tail")
+    t7 = threading.Thread(target=threshold_watch_loop, daemon=True, name="threshold-watch")
     t1.start()
     t2.start()
     t3.start()
     t4.start()
     t5.start()
+    t6.start()
+    t7.start()
 
     log.info("Exporter running. Metrics at http://0.0.0.0:8000/metrics")
     while True:

@@ -299,6 +299,7 @@
       "id": 12,
       "type": "stat",
       "title": "Avg MSE (on alert)",
+      "description": "Rata-rata MSE UE saat alert. Ambang batas keputusan aktif ditampilkan sebagai garis putus-putus di panel 'MSE Score per UE' (mengikuti model yang dimuat: GRU-UE v5 = 0.0260 atau LSTM-UE v6 = 0.0270).",
       "gridPos": {
         "x": 16,
         "y": 0,
@@ -317,14 +318,6 @@
               {
                 "value": null,
                 "color": "green"
-              },
-              {
-                "value": 0.025969,
-                "color": "orange"
-              },
-              {
-                "value": 0.05,
-                "color": "red"
               }
             ]
           }
@@ -398,6 +391,7 @@
       "id": 14,
       "type": "table",
       "title": "UE Aktif \u2014 Status Real-Time",
+      "description": "Pemetaan UE aktif per RNTI dengan metrik trafik, tipe alert (rule-based), dan stage deteksi hibrida secara real-time.",
       "gridPos": {
         "x": 0,
         "y": 4,
@@ -783,7 +777,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Threshold GRU-UE v4"
+              "options": "Threshold (active model)"
             },
             "properties": [
               {
@@ -814,8 +808,8 @@
           "legendFormat": "MSE {{rnti}}"
         },
         {
-          "expr": "0.025969 + 0 * count(xapp_ue_mse)",
-          "legendFormat": "Threshold GRU-UE v4 (0.0260)"
+          "expr": "xapp_ue_threshold",
+          "legendFormat": "Threshold (active model)"
         }
       ]
     },
@@ -958,6 +952,7 @@
       "id": 20,
       "type": "stat",
       "title": "Total Blocked Attacks",
+      "description": "Jumlah kumulatif eskalasi ke Stage 2 (proxy deteksi). Untuk aksi E2SM-RC yang benar-benar terkirim lihat panel 'Riwayat Mitigasi E2SM-RC'.",
       "gridPos": {
         "x": 0,
         "y": 32,
@@ -1109,6 +1104,76 @@
             "uid": "prometheus"
           }
         }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "state-timeline",
+      "title": "Riwayat Mitigasi E2SM-RC (PRB Throttle per UE)",
+      "description": "Riwayat aksi mitigasi E2SM-RC yang benar-benar terkirim (dicatat xApp setelah ACK Control Request). Merah = throttle aktif (PRB dibatasi), hijau = normal/restore.",
+      "gridPos": { "x": 0, "y": 38, "w": 24, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 80, "lineWidth": 0 },
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "Normal",    "color": "green" } } },
+            { "type": "value", "options": { "1": { "text": "Throttled", "color": "red"   } } }
+          ],
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 1, "color": "red" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "mergeValues": true,
+        "showValue": "auto",
+        "alignValue": "left",
+        "rowHeight": 0.9,
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "expr": "xapp_ue_mitigation_active",
+          "legendFormat": "RNTI {{rnti}}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Latensi Keputusan Mitigasi (detect \u2192 confirm \u2192 total)",
+      "description": "Latensi keputusan xApp per event terakhir (nilai global, bukan per-UE). Garis 1000 ms adalah batas atas constraint Subobjektif 4 (< 1 detik).",
+      "gridPos": { "x": 0, "y": 44, "w": 24, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0,
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Batas 1 s" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "fill": "dash" } },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          }
+        ]
+      },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "xapp_latency_detect_ms",  "legendFormat": "Detect (0\u21921)",  "datasource": { "type": "prometheus", "uid": "prometheus" } },
+        { "expr": "xapp_latency_confirm_ms", "legendFormat": "Confirm (1\u21922)", "datasource": { "type": "prometheus", "uid": "prometheus" } },
+        { "expr": "xapp_latency_total_ms",   "legendFormat": "Total (0\u21922)",   "datasource": { "type": "prometheus", "uid": "prometheus" } },
+        { "expr": "1000 + 0 * vector(1)",    "legendFormat": "Batas 1 s",          "datasource": { "type": "prometheus", "uid": "prometheus" } }
       ]
     }
   ]

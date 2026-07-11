@@ -12,6 +12,7 @@ services:
       - ./models:/data/models:ro
       - ./security_model.onnx:/data/security_model.onnx:ro
       - ./security_model.onnx.data:/data/security_model.onnx.data:ro
+      - /tmp:/tmp:ro
     environment:
       - CSV_DIR=/data/csv
       - EVAL_JSON=/data/results/eval_results.json
