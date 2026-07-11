@@ -578,21 +578,27 @@ def ue_alert_tail_loop():
                     pass  # skip existing rows on first open
             current_file = newest
 
-        if reader:
-            for raw in reader:
-                row = parse_ue_alert_row(raw)
-                rnti = row["rnti"]
-                stage = row["rule_stage"]
-                g_ue_mse.labels(rnti=rnti).set(row["mse"])
-                g_ue_alert_type.labels(rnti=rnti).set(row["alert_type"])
-                g_ue_stage.labels(rnti=rnti).set(stage)
+        if file_handle and reader:
+            while True:
+                line = file_handle.readline()
+                if not line:
+                    break
+                for raw in csv.reader([line]):
+                    if not raw:
+                        continue
+                    row = parse_ue_alert_row(dict(zip(reader.fieldnames, raw)))
+                    rnti = row["rnti"]
+                    stage = row["rule_stage"]
+                    g_ue_mse.labels(rnti=rnti).set(row["mse"])
+                    g_ue_alert_type.labels(rnti=rnti).set(row["alert_type"])
+                    g_ue_stage.labels(rnti=rnti).set(stage)
 
-                # One "blocked attack" per escalation into Stage 2 (critical →
-                # mitigation). Count only the 0/1 → 2 transition, not every row.
-                if stage >= 2 and _ue_prev_stage.get(rnti, 0) < 2:
-                    atype = _ATTACK_NAME.get(row["alert_type"], "unknown")
-                    c_attacks_blocked.labels(rnti=rnti, attack_type=atype).inc()
-                _ue_prev_stage[rnti] = stage
+                    # One "blocked attack" per escalation into Stage 2 (critical →
+                    # mitigation). Count only the 0/1 → 2 transition, not every row.
+                    if stage >= 2 and _ue_prev_stage.get(rnti, 0) < 2:
+                        atype = _ATTACK_NAME.get(row["alert_type"], "unknown")
+                        c_attacks_blocked.labels(rnti=rnti, attack_type=atype).inc()
+                    _ue_prev_stage[rnti] = stage
 
         time.sleep(POLL_INTERVAL)
 
@@ -619,16 +625,22 @@ def ue_feature_tail_loop():
                     pass  # skip existing rows on first open
             current_file = newest
 
-        if reader:
-            for raw in reader:
-                row = parse_ue_feature_row(raw)
-                rnti = row["rnti"]
-                g_ue_prb_ul.labels(rnti=rnti).set(row["prb_usage_ul_ratio"])
-                g_ue_prb_dl.labels(rnti=rnti).set(row["prb_usage_dl_ratio"])
-                g_ue_thp_ul_kbps.labels(rnti=rnti).set(row["thp_ul_kbps"])
-                g_ue_thp_dl_kbps.labels(rnti=rnti).set(row["thp_dl_kbps"])
-                g_ue_prb_direction.labels(rnti=rnti).set(row["prb_direction"])
-                g_ue_ul_efficiency.labels(rnti=rnti).set(row["ul_efficiency"])
+        if file_handle and reader:
+            while True:
+                line = file_handle.readline()
+                if not line:
+                    break
+                for raw in csv.reader([line]):
+                    if not raw:
+                        continue
+                    row = parse_ue_feature_row(dict(zip(reader.fieldnames, raw)))
+                    rnti = row["rnti"]
+                    g_ue_prb_ul.labels(rnti=rnti).set(row["prb_usage_ul_ratio"])
+                    g_ue_prb_dl.labels(rnti=rnti).set(row["prb_usage_dl_ratio"])
+                    g_ue_thp_ul_kbps.labels(rnti=rnti).set(row["thp_ul_kbps"])
+                    g_ue_thp_dl_kbps.labels(rnti=rnti).set(row["thp_dl_kbps"])
+                    g_ue_prb_direction.labels(rnti=rnti).set(row["prb_direction"])
+                    g_ue_ul_efficiency.labels(rnti=rnti).set(row["ul_efficiency"])
 
         time.sleep(0.5)
 
@@ -655,9 +667,15 @@ def mitigation_tail_loop():
                     pass  # skip existing rows on first open
             current_file = newest
 
-        if reader:
-            for raw in reader:
-                update_mitigation_metrics(parse_mitigation_row(raw))
+        if file_handle and reader:
+            while True:
+                line = file_handle.readline()
+                if not line:
+                    break
+                for raw in csv.reader([line]):
+                    if not raw:
+                        continue
+                    update_mitigation_metrics(parse_mitigation_row(dict(zip(reader.fieldnames, raw))))
 
         time.sleep(POLL_INTERVAL)
 
