@@ -1,5 +1,11 @@
 # Benign-Calibrated Detection @ Hybrid FPR(Attack) <= 3%
 
+## Threshold (benign-calibrated weighted MSE)
+| Model | Th | Percentile (val benign) | Percentile (attack benign) |
+|---|---|---|---|
+| GRU | 0.006654 | P95.32 | P97.15 |
+| LSTM | 0.008619 | P95.32 | P97.15 |
+
 ## Global metrics
 | Model | Config | Recall | Precision | F1 | FPR(Attack) | FPR(Val) | AUC |
 |---|---|---|---|---|---|---|---|

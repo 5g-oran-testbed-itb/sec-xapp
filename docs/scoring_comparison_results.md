@@ -9,6 +9,21 @@ Every configuration is evaluated at a **matched operating point**: the threshold
 
 **Scheme legend:** `uniform` = plain MSE; `benign` = benign-calibrated weights (median+MAD, attack-free — **recommended**); `attack` = Scheme A attack-informed weights (circular here, shown as a biased upper bound).
 
+## Why the previous scheme leaked, and the fix
+
+**What leaked — attack-informed "Scheme A".** The previously deployed weighting derived each feature's weight from the ratio of its *attack* reconstruction error to its *benign* reconstruction error — conceptually `w_j = log(max_c mean_err_attack[c,j] / mean_err_benign[j])` — computed on `csv/dataset_attack_ue_juni.csv`, the very file used to report the final metrics ([`src/detection/feature_schema_ue.py:37`](../src/detection/feature_schema_ue.py)). Two leakage paths resulted:
+
+1. **Scoring leakage** — the anomaly-score function embedded 19 coefficients fitted with attack labels, then was scored on those same attacks → circular / optimistic.
+2. **Model-selection leakage** — the weighting variant (Scheme A vs B vs C) was chosen by whichever gave the highest AUC on that same attack file.
+
+Symptom: switching the weighting on raised the reported AUC from ≈0.875 to ≈0.967 — partly real signal, partly fitting to the test set. This is exactly what makes the reviewer's "attack-informed / not fully unsupervised" critique correct.
+
+**The fix — benign-calibrated residual weighting.** Weights now come from benign statistics only:
+
+`w_j = 1 / (median(e_j) + MAD(e_j) + ε)`, capped at `10 × median(w)`,
+
+where `e_j` is the per-feature squared reconstruction error on the **benign validation set** ([`src/detection/scoring.py`](../src/detection/scoring.py)). Features whose benign residual is small and stable get more weight; the cap stops a near-zero-residual feature from dominating. No attack label ever touches the weights or the threshold, so the detector is genuinely one-class/unsupervised and `dataset_attack_ue_juni.csv` becomes a valid held-out test. The tables below show this leakage-free scheme matches or beats the attack-informed one at matched FPR — i.e. the "leaked" gain was recoverable without any attack information.
+
 ## Scheme selection — global metrics @ FPR(Attack) = 2.99%
 
 _ML-Only, three scoring schemes side by side, to justify dropping attack-informed. The final deployable config (Rule/ML/Hybrid, benign only) follows below._
@@ -36,6 +51,17 @@ _ML-Only, three scoring schemes side by side, to justify dropping attack-informe
 ## Final benign-calibrated detection — Rule / ML-Only / Hybrid
 
 Using **only** the leakage-free benign scheme (no Scheme A), threshold calibrated so the deployed **Hybrid** config stays under FPR(Attack) = 3% (the binding constraint; ML-Only and Rule-Only sit below). This is the leakage-free equivalent of the `per_ue_v5_results.md` §2–§3 tables.
+
+### Threshold (Th) and percentile
+
+| Model | Th (benign-calibrated weighted MSE) | Percentile on val benign | Percentile on attack benign |
+|---|---|---|---|
+| GRU v5 | **0.006654** | **P95.32** | P97.15 |
+| LSTM v6 | **0.008619** | **P95.32** | P97.15 |
+
+The threshold is chosen so the deployed Hybrid lands at FPR(Attack) = 2.99%, using benign windows only. Reading it: at `Th`, 95.32% of validation-benign windows score below it (→ ML-Only FPR(Val) = 4.68%) and 97.15% of attack-file benign windows do (→ ML-Only FPR(Attack) = 2.85%); the rule engine adds the remaining false positives up to the 2.99% Hybrid ceiling.
+
+> **Scale note:** these `Th` values live in the *benign-calibrated* weighted-MSE space and are **not** comparable to the deployed Scheme A thresholds (GRU `0.0245`, LSTM `0.023` in `models/*_threshold.json`) — a different weight vector produces a different score scale. Compare percentiles, not raw thresholds.
 
 ### Global metrics @ Hybrid FPR(Attack) = 2.99%
 

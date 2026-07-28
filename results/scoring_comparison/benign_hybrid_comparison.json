@@ -1,6 +1,8 @@
 {
   "gru": {
     "threshold": 0.006654,
+    "threshold_pct_val": 95.32,
+    "threshold_pct_attack_benign": 97.15,
     "rule_only": {
       "recall": 0.8578,
       "precision": 0.9751,
@@ -64,6 +66,8 @@
   },
   "lstm": {
     "threshold": 0.008619,
+    "threshold_pct_val": 95.32,
+    "threshold_pct_attack_benign": 97.15,
     "rule_only": {
       "recall": 0.8578,
       "precision": 0.9751,

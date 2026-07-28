@@ -113,8 +113,15 @@ def evaluate_model(model, scaler, val_data, atk_data, target_fpr):
     val_ml_fires = val_ml > thr
     _, _, ml_auc = compute_roc_auc(atk_ml[neg], atk_ml[atk_lbls > 0])
 
+    # Threshold provenance: what percentile of each benign score distribution it sits at.
+    finite = thr != float("inf")
+    pct_val = float((val_ml <= thr).mean() * 100) if (finite and len(val_ml)) else 100.0
+    pct_atk_benign = float((atk_ml[neg] <= thr).mean() * 100) if finite else 100.0
+
     return {
-        "threshold": (None if thr == float("inf") else round(thr, 6)),
+        "threshold": (None if not finite else round(thr, 6)),
+        "threshold_pct_val": round(pct_val, 2),
+        "threshold_pct_attack_benign": round(pct_atk_benign, 2),
         # ROC-AUC only defined for the pure ML score (N/A for rule/hybrid, per convention).
         "rule_only": metrics_from_fires(atk_rule, atk_lbls, val_rule, auc=None),
         "ml_only":   metrics_from_fires(atk_ml_fires, atk_lbls, val_ml_fires, auc=ml_auc),
@@ -173,7 +180,15 @@ def main():
     row_names = [("rule_only", "Rule Only"), ("ml_only", "ML-Only (benign)"),
                  ("hybrid", "Hybrid (Rule OR benign)")]
     lines = [f"# Benign-Calibrated Detection @ Hybrid FPR(Attack) <= {tgt}\n",
-             "## Global metrics",
+             "## Threshold (benign-calibrated weighted MSE)",
+             "| Model | Th | Percentile (val benign) | Percentile (attack benign) |",
+             "|---|---|---|---|"]
+    for mtype in ["gru", "lstm"]:
+        r = all_results[mtype]
+        th = f"{r['threshold']:.6f}" if r["threshold"] is not None else "inf"
+        lines.append(f"| {mtype.upper()} | {th} | P{r['threshold_pct_val']:.2f} | "
+                     f"P{r['threshold_pct_attack_benign']:.2f} |")
+    lines += ["\n## Global metrics",
              "| Model | Config | Recall | Precision | F1 | FPR(Attack) | FPR(Val) | AUC |",
              "|---|---|---|---|---|---|---|---|"]
     for mtype in ["gru", "lstm"]:
