@@ -38,3 +38,28 @@ def test_benign_weights_are_capped():
                                   + np.median(np.abs(res - np.median(res, axis=0)), axis=0)
                                   + 1e-6))
     assert w.max() <= 10.0 * raw_median + 1e-3
+
+
+from src.detection.scoring import make_weight_vec
+
+
+def test_make_weight_vec_uniform():
+    names = ["a", "b", "c"]
+    w = make_weight_vec("uniform", names, {"a": 5.0}, None)
+    assert list(w) == [1.0, 1.0, 1.0]
+
+
+def test_make_weight_vec_attack_uses_dict():
+    names = ["a", "b"]
+    w = make_weight_vec("attack", names, {"a": 4.7, "b": 0.4}, None)
+    assert w[0] == pytest.approx(4.7) and w[1] == pytest.approx(0.4)
+
+
+def test_make_weight_vec_benign_requires_residuals():
+    with pytest.raises(ValueError):
+        make_weight_vec("benign", ["a"], {}, None)
+
+
+def test_make_weight_vec_rejects_unknown():
+    with pytest.raises(ValueError):
+        make_weight_vec("bogus", ["a"], {}, None)

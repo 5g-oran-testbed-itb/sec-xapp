@@ -37,3 +37,51 @@ def benign_calibrated_weights(residuals: np.ndarray,
     raw = 1.0 / (med + mad + eps)                       # (F,)
     cap = cap_mult * np.median(raw)
     return np.minimum(raw, cap).astype(np.float32)
+
+
+def make_weight_vec(scoring: str,
+                    feature_names: list,
+                    attack_weight_dict: dict,
+                    benign_residuals=None) -> np.ndarray:
+    """Return the (F,) weight vector for a scoring scheme.
+
+    scoring: "uniform" | "attack" | "benign".
+      - uniform: all ones.
+      - attack:  Scheme A weights from attack_weight_dict (attack-informed).
+      - benign:  benign_calibrated_weights(benign_residuals) (attack-free).
+    """
+    n = len(feature_names)
+    if scoring == "uniform":
+        return np.ones(n, dtype=np.float32)
+    if scoring == "attack":
+        return np.array([attack_weight_dict.get(f, 1.0) for f in feature_names],
+                        dtype=np.float32)
+    if scoring == "benign":
+        if benign_residuals is None or len(benign_residuals) == 0:
+            raise ValueError("benign scoring requires non-empty benign_residuals")
+        return benign_calibrated_weights(benign_residuals)
+    raise ValueError(f"unknown scoring mode: {scoring!r}")
+
+
+def per_feature_residuals_from_windows(model, wins, batch: int = 256) -> np.ndarray:
+    """Per-feature squared reconstruction error (mean over time) for each window.
+
+    model: torch autoencoder returning (B, seq, F).
+    wins: (N, seq, F) float32 scaled windows (from build_windows).
+    Returns: (N, F) float32 residuals. Empty (0, F) if no windows.
+
+    NOTE: torch is imported lazily so the pure functions above stay import-cheap.
+    """
+    import torch
+    if len(wins) == 0:
+        f = wins.shape[-1] if wins.ndim == 3 else 0
+        return np.zeros((0, f), dtype=np.float32)
+    model.eval()
+    parts = []
+    for i in range(0, len(wins), batch):
+        chunk = torch.tensor(wins[i:i + batch])
+        with torch.no_grad():
+            recon = model(chunk)
+            fe = ((recon - chunk) ** 2).mean(dim=1)   # (B, F)
+        parts.append(fe.numpy())
+    return np.concatenate(parts).astype(np.float32)
