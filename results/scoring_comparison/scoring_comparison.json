@@ -1,0 +1,126 @@
+{
+  "gru": [
+    {
+      "scoring": "uniform",
+      "leakage_free": true,
+      "threshold_p97": 0.029839,
+      "held_out_fpr": 0.0166,
+      "recall_at_p97": 0.6534,
+      "auc": 0.9756,
+      "recall_at_fpr": {
+        "5pct": 0.8927,
+        "3pct": 0.7996
+      },
+      "per_class_recall": {
+        "ul_flood": 0.061,
+        "dl_flood": 0.8702,
+        "burst": 0.9517,
+        "roq": 0.6032
+      },
+      "n_neg": 5723,
+      "n_pos": 2236
+    },
+    {
+      "scoring": "benign",
+      "leakage_free": true,
+      "threshold_p97": 0.01466,
+      "held_out_fpr": 0.0171,
+      "recall_at_p97": 0.8189,
+      "auc": 0.9912,
+      "recall_at_fpr": {
+        "5pct": 0.9861,
+        "3pct": 0.9732
+      },
+      "per_class_recall": {
+        "ul_flood": 0.9366,
+        "dl_flood": 0.0,
+        "burst": 0.9807,
+        "roq": 0.9665
+      },
+      "n_neg": 5723,
+      "n_pos": 2236
+    },
+    {
+      "scoring": "attack",
+      "leakage_free": false,
+      "threshold_p97": 0.024617,
+      "held_out_fpr": 0.0204,
+      "recall_at_p97": 0.9316,
+      "auc": 0.9903,
+      "recall_at_fpr": {
+        "5pct": 0.9911,
+        "3pct": 0.97
+      },
+      "per_class_recall": {
+        "ul_flood": 0.8732,
+        "dl_flood": 0.8791,
+        "burst": 0.9697,
+        "roq": 0.9517
+      },
+      "n_neg": 5723,
+      "n_pos": 2236
+    }
+  ],
+  "lstm": [
+    {
+      "scoring": "uniform",
+      "leakage_free": true,
+      "threshold_p97": 0.036197,
+      "held_out_fpr": 0.0201,
+      "recall_at_p97": 0.7701,
+      "auc": 0.9631,
+      "recall_at_fpr": {
+        "5pct": 0.9137,
+        "3pct": 0.8792
+      },
+      "per_class_recall": {
+        "ul_flood": 0.6831,
+        "dl_flood": 0.9174,
+        "burst": 0.9821,
+        "roq": 0.5469
+      },
+      "n_neg": 5723,
+      "n_pos": 2236
+    },
+    {
+      "scoring": "benign",
+      "leakage_free": true,
+      "threshold_p97": 0.016841,
+      "held_out_fpr": 0.021,
+      "recall_at_p97": 0.8318,
+      "auc": 0.9896,
+      "recall_at_fpr": {
+        "5pct": 0.9893,
+        "3pct": 0.9799
+      },
+      "per_class_recall": {
+        "ul_flood": 0.9671,
+        "dl_flood": 0.0855,
+        "burst": 0.989,
+        "roq": 0.941
+      },
+      "n_neg": 5723,
+      "n_pos": 2236
+    },
+    {
+      "scoring": "attack",
+      "leakage_free": false,
+      "threshold_p97": 0.027571,
+      "held_out_fpr": 0.0236,
+      "recall_at_p97": 0.9047,
+      "auc": 0.9876,
+      "recall_at_fpr": {
+        "5pct": 0.9919,
+        "3pct": 0.9741
+      },
+      "per_class_recall": {
+        "ul_flood": 0.9554,
+        "dl_flood": 0.9145,
+        "burst": 0.989,
+        "roq": 0.7895
+      },
+      "n_neg": 5723,
+      "n_pos": 2236
+    }
+  ]
+}
