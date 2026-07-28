@@ -1,0 +1,128 @@
+{
+  "gru": {
+    "threshold": 0.006654,
+    "rule_only": {
+      "recall": 0.8578,
+      "precision": 0.9751,
+      "f1": 0.9127,
+      "fpr_attack": 0.0086,
+      "fpr_val": 0.0293,
+      "auc": null,
+      "per_class_recall": {
+        "ul_flood": 0.9718,
+        "dl_flood": 0.9676,
+        "burst": 0.9503,
+        "roq": 0.6528
+      },
+      "confusion": {
+        "tp": 1918,
+        "fp": 49,
+        "tn": 5674,
+        "fn": 318
+      }
+    },
+    "ml_only": {
+      "recall": 0.9714,
+      "precision": 0.9302,
+      "f1": 0.9503,
+      "fpr_attack": 0.0285,
+      "fpr_val": 0.0468,
+      "auc": 0.9912,
+      "per_class_recall": {
+        "ul_flood": 0.9883,
+        "dl_flood": 0.8791,
+        "burst": 0.9876,
+        "roq": 0.9879
+      },
+      "confusion": {
+        "tp": 2172,
+        "fp": 163,
+        "tn": 5560,
+        "fn": 64
+      }
+    },
+    "hybrid": {
+      "recall": 0.9861,
+      "precision": 0.928,
+      "f1": 0.9562,
+      "fpr_attack": 0.0299,
+      "fpr_val": 0.0587,
+      "auc": null,
+      "per_class_recall": {
+        "ul_flood": 0.9883,
+        "dl_flood": 0.9676,
+        "burst": 0.989,
+        "roq": 0.9906
+      },
+      "confusion": {
+        "tp": 2205,
+        "fp": 171,
+        "tn": 5552,
+        "fn": 31
+      }
+    }
+  },
+  "lstm": {
+    "threshold": 0.008619,
+    "rule_only": {
+      "recall": 0.8578,
+      "precision": 0.9751,
+      "f1": 0.9127,
+      "fpr_attack": 0.0086,
+      "fpr_val": 0.0293,
+      "auc": null,
+      "per_class_recall": {
+        "ul_flood": 0.9718,
+        "dl_flood": 0.9676,
+        "burst": 0.9503,
+        "roq": 0.6528
+      },
+      "confusion": {
+        "tp": 1918,
+        "fp": 49,
+        "tn": 5674,
+        "fn": 318
+      }
+    },
+    "ml_only": {
+      "recall": 0.9799,
+      "precision": 0.9308,
+      "f1": 0.9547,
+      "fpr_attack": 0.0285,
+      "fpr_val": 0.0468,
+      "auc": 0.9896,
+      "per_class_recall": {
+        "ul_flood": 0.9883,
+        "dl_flood": 0.9086,
+        "burst": 0.9931,
+        "roq": 0.9946
+      },
+      "confusion": {
+        "tp": 2191,
+        "fp": 163,
+        "tn": 5560,
+        "fn": 45
+      }
+    },
+    "hybrid": {
+      "recall": 0.9888,
+      "precision": 0.9282,
+      "f1": 0.9576,
+      "fpr_attack": 0.0299,
+      "fpr_val": 0.0581,
+      "auc": null,
+      "per_class_recall": {
+        "ul_flood": 0.9883,
+        "dl_flood": 0.9676,
+        "burst": 0.9931,
+        "roq": 0.9946
+      },
+      "confusion": {
+        "tp": 2211,
+        "fp": 171,
+        "tn": 5552,
+        "fn": 25
+      }
+    }
+  }
+}

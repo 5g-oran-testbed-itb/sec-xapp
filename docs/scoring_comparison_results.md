@@ -9,7 +9,9 @@ Every configuration is evaluated at a **matched operating point**: the threshold
 
 **Scheme legend:** `uniform` = plain MSE; `benign` = benign-calibrated weights (median+MAD, attack-free — **recommended**); `attack` = Scheme A attack-informed weights (circular here, shown as a biased upper bound).
 
-## Global metrics @ FPR(Attack) = 2.99%
+## Scheme selection — global metrics @ FPR(Attack) = 2.99%
+
+_ML-Only, three scoring schemes side by side, to justify dropping attack-informed. The final deployable config (Rule/ML/Hybrid, benign only) follows below._
 
 | Model | Scoring | Leakage-free | Recall | Precision | F1 | FPR(Attack) | FPR(Val) | AUC |
 |---|---|---|---|---|---|---|---|---|
@@ -20,7 +22,7 @@ Every configuration is evaluated at a **matched operating point**: the threshold
 | LSTM | **benign** | **yes** | **97.99%** | **92.76%** | **95.30%** | **2.99%** | **4.80%** | **0.9896** |
 | LSTM | attack | NO (biased) | 97.41% | 92.72% | 95.01% | 2.99% | 7.56% | 0.9876 |
 
-## Per-class recall @ FPR(Attack) = 2.99%
+## Scheme selection — per-class recall @ FPR(Attack) = 2.99%
 
 | Model | Scoring | UL Flood | DL Flood | Burst | RoQ |
 |---|---|---|---|---|---|
@@ -31,9 +33,41 @@ Every configuration is evaluated at a **matched operating point**: the threshold
 | LSTM | benign | 98.83% | 90.86% | 99.31% | 99.46% |
 | LSTM | attack | 98.59% | 95.87% | 99.31% | 95.58% |
 
+## Final benign-calibrated detection — Rule / ML-Only / Hybrid
+
+Using **only** the leakage-free benign scheme (no Scheme A), threshold calibrated so the deployed **Hybrid** config stays under FPR(Attack) = 3% (the binding constraint; ML-Only and Rule-Only sit below). This is the leakage-free equivalent of the `per_ue_v5_results.md` §2–§3 tables.
+
+### Global metrics @ Hybrid FPR(Attack) = 2.99%
+
+| Model | Config | Recall | Precision | F1 | FPR(Attack) | FPR(Val) | AUC |
+|---|---|---|---|---|---|---|---|
+| GRU | Rule Only | 85.78% | 97.51% | 91.27% | 0.86% | 2.93% | N/A |
+| GRU | ML-Only (benign) | 97.14% | 93.02% | 95.03% | 2.85% | 4.68% | 0.9912 |
+| GRU | **Hybrid (Rule OR benign)** | **98.61%** | 92.80% | **95.62%** | 2.99% | 5.87% | N/A |
+| LSTM | Rule Only | 85.78% | 97.51% | 91.27% | 0.86% | 2.93% | N/A |
+| LSTM | ML-Only (benign) | 97.99% | 93.08% | 95.47% | 2.85% | 4.68% | 0.9896 |
+| LSTM | **Hybrid (Rule OR benign)** | **98.88%** | 92.82% | **95.76%** | 2.99% | 5.81% | N/A |
+
+### Per-class recall @ Hybrid FPR(Attack) = 2.99%
+
+| Model | Config | UL Flood | DL Flood | Burst | RoQ |
+|---|---|---|---|---|---|
+| GRU | Rule Only | 97.18% | 96.76% | 95.03% | 65.28% |
+| GRU | ML-Only (benign) | 98.83% | 87.91% | 98.76% | 98.79% |
+| GRU | Hybrid (Rule OR benign) | 98.83% | 96.76% | 98.90% | 99.06% |
+| LSTM | Rule Only | 97.18% | 96.76% | 95.03% | 65.28% |
+| LSTM | ML-Only (benign) | 98.83% | 90.86% | 99.31% | 99.46% |
+| LSTM | Hybrid (Rule OR benign) | 98.83% | 96.76% | 99.31% | 99.46% |
+
+Artifacts: `results/scoring_comparison/benign_hybrid_comparison.{json,md}`.
+
 ## Interpretation
 
 1. **Benign-calibrated equals or beats attack-informed at matched FPR — without leakage.** At a fixed FPR(Attack) of 2.99%, the leakage-free benign scheme wins on Recall, F1, and AUC for both models (GRU 97.32%/94.96%/0.9912 vs attack 97.00%/94.80%/0.9903; LSTM 97.99%/95.30%/0.9896 vs attack 97.41%/95.01%/0.9876). This is the decisive result: the attack-informed weighting provided **no genuine benefit** once the FPR is matched — its earlier apparent advantage was purely the leakage/FPR artifact. Per the spec §8 decision rule, **adopt benign-calibrated scoring**.
+
+2. **The benign-calibrated Hybrid is the deployable, leakage-free config.** GRU-Hybrid 98.61% Recall / 95.62% F1 and LSTM-Hybrid 98.88% / 95.76% at FPR(Attack) 2.99% — matching or exceeding the previously reported attack-informed hybrids (GRU-Hybrid v5 98.08%, LSTM-Hybrid v6 94.59% in `per_ue_v5_results.md`) with no attack leakage. The Rule-Only baseline (85.78% / 0.86%) reproduces the reference exactly, confirming pipeline consistency.
+
+3. **The hybrid closes benign-calibrated's DL-flood gap.** ML-Only benign DL-flood recall (GRU 87.91%, LSTM 90.86%) is lifted to 96.76% in the hybrid because rule **R2** (`prb_usage_dl_ratio > 0.85`) catches DL flood independently of the ML score. Conversely the ML score carries RoQ (Rule-Only RoQ is only 65.28%). The two are complementary — every attack class clears ≥85% in the hybrid.
 
 2. **Benign-calibrated also generalizes better.** Its FPR on the independent validation set is markedly lower (GRU 5.14%, LSTM 4.80%) than the attack-informed scheme (7.34% / 7.56%), i.e. the attack-tuned weights overfit the attack-capture benign distribution.
 
