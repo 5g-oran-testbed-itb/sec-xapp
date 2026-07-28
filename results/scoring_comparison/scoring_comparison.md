@@ -1,10 +1,21 @@
-# Scoring Comparison (held-out on dataset_attack_ue_juni.csv)
+# Scoring Comparison @ FPR(Attack) <= 3% (held-out on dataset_attack_ue_juni.csv)
 
-| Model | Scoring | Leakage-free | Recall@P97 | Held-out FPR | AUC | Recall@5% | Recall@3% |
-|---|---|---|---|---|---|---|---|
-| GRU | uniform | yes | 0.6534 | 0.0166 | 0.9756 | 0.8927 | 0.7996 |
-| GRU | benign | yes | 0.8189 | 0.0171 | 0.9912 | 0.9861 | 0.9732 |
-| GRU | attack | NO (biased) | 0.9316 | 0.0204 | 0.9903 | 0.9911 | 0.9700 |
-| LSTM | uniform | yes | 0.7701 | 0.0201 | 0.9631 | 0.9137 | 0.8792 |
-| LSTM | benign | yes | 0.8318 | 0.0210 | 0.9896 | 0.9893 | 0.9799 |
-| LSTM | attack | NO (biased) | 0.9047 | 0.0236 | 0.9876 | 0.9919 | 0.9741 |
+## Global metrics
+| Model | Scoring | Leakage-free | Recall | Precision | F1 | FPR(Attack) | FPR(Val) | AUC |
+|---|---|---|---|---|---|---|---|---|
+| GRU | uniform | yes | 79.96% | 91.27% | 85.24% | 2.99% | 8.13% | 0.9756 |
+| GRU | benign | yes | 97.32% | 92.71% | 94.96% | 2.99% | 5.14% | 0.9912 |
+| GRU | attack | NO (biased) | 97.00% | 92.69% | 94.80% | 2.99% | 7.34% | 0.9903 |
+| LSTM | uniform | yes | 87.92% | 92.00% | 89.92% | 2.99% | 7.17% | 0.9631 |
+| LSTM | benign | yes | 97.99% | 92.76% | 95.30% | 2.99% | 4.80% | 0.9896 |
+| LSTM | attack | NO (biased) | 97.41% | 92.72% | 95.01% | 2.99% | 7.56% | 0.9876 |
+
+## Per-class recall
+| Model | Scoring | UL Flood | DL Flood | Burst | RoQ |
+|---|---|---|---|---|---|
+| GRU | uniform | 28.40% | 92.63% | 97.79% | 86.33% |
+| GRU | benign | 98.83% | 88.20% | 99.03% | 98.93% |
+| GRU | attack | 96.71% | 92.92% | 98.34% | 97.72% |
+| LSTM | uniform | 90.38% | 95.28% | 99.17% | 72.25% |
+| LSTM | benign | 98.83% | 90.86% | 99.31% | 99.46% |
+| LSTM | attack | 98.59% | 95.87% | 99.31% | 95.58% |

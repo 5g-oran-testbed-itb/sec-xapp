@@ -27,8 +27,7 @@ from src.detection.scoring import (
 
 LABEL_NAMES = {1: "ul_flood", 2: "dl_flood", 3: "burst", 4: "roq"}
 SCORINGS = ["uniform", "benign", "attack"]
-FPR_POINTS = [0.05, 0.03]
-P_THRESHOLD = 97.0  # percentile on benign validation scores
+TARGET_FPR_ATTACK = 0.03  # calibrate threshold to keep FPR(Attack) below 3%
 
 
 def pooled_residuals(model, scaler, rows_by_rnti):
@@ -52,25 +51,42 @@ def pooled_residuals(model, scaler, rows_by_rnti):
     return np.concatenate(res_parts), np.concatenate(lbl_parts)
 
 
-def recall_at_fpr(neg, pos, target_fpr):
-    """TPR at a target FPR, read off the ROC curve."""
-    fpr, tpr, _ = compute_roc_auc(neg, pos)
-    return float(np.interp(target_fpr, fpr, tpr))
+def threshold_for_target_fpr(neg_scores, target_fpr):
+    """Smallest threshold whose FPR on held-out benign windows is <= target_fpr.
+
+    Uses an order statistic (not interpolated quantile) so the achieved FPR is
+    guaranteed <= target, and relies only on benign (label==0) scores — no
+    attack-class labels — so it does not reintroduce attack leakage.
+    """
+    s = np.sort(np.asarray(neg_scores, dtype=np.float64))
+    n = len(s)
+    if n == 0:
+        return 0.0
+    k = int(np.ceil((1.0 - target_fpr) * n))   # count kept at-or-below threshold
+    k = min(max(k, 1), n)
+    return float(s[k - 1])
 
 
-def evaluate_one(model, scaler, val_res, atk_res, atk_lbls, scoring):
-    """Return a metrics dict for one (model, scoring) combination."""
+def evaluate_one(model, scaler, val_res, atk_res, atk_lbls, scoring,
+                 target_fpr=TARGET_FPR_ATTACK):
+    """Full metric suite for one (model, scoring) combo at FPR(Attack) <= target."""
     w = make_weight_vec(scoring, FEATURE_NAMES, FEATURE_WEIGHTS,
                         benign_residuals=val_res)
     val_scores = weighted_score(val_res, w)
-    thr = float(np.percentile(val_scores, P_THRESHOLD))
-
     atk_scores = weighted_score(atk_res, w)
     neg = atk_scores[atk_lbls == 0]                    # held-out benign windows
     pos = atk_scores[atk_lbls > 0]
 
-    held_out_fpr = float((neg > thr).mean()) if len(neg) else 0.0
-    recall = float((pos > thr).mean()) if len(pos) else 0.0
+    thr = threshold_for_target_fpr(neg, target_fpr)
+
+    tp = int((pos > thr).sum()); fn = int(len(pos) - tp)
+    fp = int((neg > thr).sum()); tn = int(len(neg) - fp)
+    recall    = tp / (tp + fn) if (tp + fn) else 0.0
+    precision = tp / (tp + fp) if (tp + fp) else 0.0
+    f1        = (2 * precision * recall / (precision + recall)
+                 if (precision + recall) else 0.0)
+    fpr_attack = fp / (fp + tn) if (fp + tn) else 0.0
+    fpr_val = float((val_scores > thr).mean()) if len(val_scores) else 0.0
     _, _, auc = compute_roc_auc(neg, pos)
 
     per_class = {}
@@ -81,13 +97,16 @@ def evaluate_one(model, scaler, val_res, atk_res, atk_lbls, scoring):
     return {
         "scoring": scoring,
         "leakage_free": scoring in ("uniform", "benign"),
-        "threshold_p97": round(thr, 6),
-        "held_out_fpr": round(held_out_fpr, 4),
-        "recall_at_p97": round(recall, 4),
+        "target_fpr": target_fpr,
+        "threshold": round(thr, 6),
+        "recall": round(recall, 4),
+        "precision": round(precision, 4),
+        "f1": round(f1, 4),
+        "fpr_attack": round(fpr_attack, 4),
+        "fpr_val": round(fpr_val, 4),
         "auc": auc,
-        "recall_at_fpr": {f"{int(p*100)}pct": round(recall_at_fpr(neg, pos, p), 4)
-                          for p in FPR_POINTS},
         "per_class_recall": per_class,
+        "confusion": {"tp": tp, "fp": fp, "tn": tn, "fn": fn},
         "n_neg": int(len(neg)),
         "n_pos": int(len(pos)),
     }
@@ -98,6 +117,8 @@ def main():
     ap.add_argument("--val",    default="csv/dataset_validation_ue_juni.csv")
     ap.add_argument("--attack", default="csv/dataset_attack_ue_juni.csv")
     ap.add_argument("--output", default="results/scoring_comparison/")
+    ap.add_argument("--target-fpr", type=float, default=TARGET_FPR_ATTACK,
+                    help="FPR(Attack) ceiling used to calibrate the threshold")
     ap.add_argument("--lstm-model",  default="models/lstm_ue_v6.pt")
     ap.add_argument("--lstm-scaler", default="models/lstm_ue_v6_scaler.pkl")
     ap.add_argument("--lstm-threshold", default="models/lstm_ue_v6_threshold.json")
@@ -129,7 +150,8 @@ def main():
         print(f"    val windows={len(val_res)}  attack windows={len(atk_res)} "
               f"(benign={int((atk_lbls==0).sum())}, attack={int((atk_lbls>0).sum())})")
         all_results[mtype] = [
-            evaluate_one(model, scaler, val_res, atk_res, atk_lbls, s)
+            evaluate_one(model, scaler, val_res, atk_res, atk_lbls, s,
+                         target_fpr=args.target_fpr)
             for s in SCORINGS
         ]
 
@@ -139,16 +161,32 @@ def main():
         json.dump(all_results, f, indent=2)
     print(f"\n[JSON] {json_path}")
 
-    lines = ["# Scoring Comparison (held-out on dataset_attack_ue_juni.csv)\n",
-             "| Model | Scoring | Leakage-free | Recall@P97 | Held-out FPR | AUC | Recall@5% | Recall@3% |",
-             "|---|---|---|---|---|---|---|---|"]
+    tgt = f"{args.target_fpr*100:.0f}%"
+    lines = [f"# Scoring Comparison @ FPR(Attack) <= {tgt} "
+             "(held-out on dataset_attack_ue_juni.csv)\n",
+             "## Global metrics",
+             "| Model | Scoring | Leakage-free | Recall | Precision | F1 | "
+             "FPR(Attack) | FPR(Val) | AUC |",
+             "|---|---|---|---|---|---|---|---|---|"]
     for mtype in ["gru", "lstm"]:
         for r in all_results[mtype]:
             lines.append(
                 f"| {mtype.upper()} | {r['scoring']} | "
                 f"{'yes' if r['leakage_free'] else 'NO (biased)'} | "
-                f"{r['recall_at_p97']:.4f} | {r['held_out_fpr']:.4f} | {r['auc']:.4f} | "
-                f"{r['recall_at_fpr']['5pct']:.4f} | {r['recall_at_fpr']['3pct']:.4f} |")
+                f"{r['recall']*100:.2f}% | {r['precision']*100:.2f}% | {r['f1']*100:.2f}% | "
+                f"{r['fpr_attack']*100:.2f}% | {r['fpr_val']*100:.2f}% | {r['auc']:.4f} |")
+    lines += ["\n## Per-class recall",
+              "| Model | Scoring | UL Flood | DL Flood | Burst | RoQ |",
+              "|---|---|---|---|---|---|"]
+
+    def _pc(v):
+        return f"{v*100:.2f}%" if v is not None else "-"
+    for mtype in ["gru", "lstm"]:
+        for r in all_results[mtype]:
+            pc = r["per_class_recall"]
+            lines.append(
+                f"| {mtype.upper()} | {r['scoring']} | {_pc(pc['ul_flood'])} | "
+                f"{_pc(pc['dl_flood'])} | {_pc(pc['burst'])} | {_pc(pc['roq'])} |")
     md_path = os.path.join(args.output, "scoring_comparison.md")
     with open(md_path, "w") as f:
         f.write("\n".join(lines) + "\n")
