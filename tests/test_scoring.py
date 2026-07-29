@@ -63,3 +63,33 @@ def test_make_weight_vec_benign_requires_residuals():
 def test_make_weight_vec_rejects_unknown():
     with pytest.raises(ValueError):
         make_weight_vec("bogus", ["a"], {}, None)
+
+
+import json as _json
+from src.detection.scoring import load_loss_weights
+
+
+def test_load_loss_weights_uniform():
+    assert list(load_loss_weights("uniform", ["a", "b", "c"], {"a": 5.0})) == [1.0, 1.0, 1.0]
+
+
+def test_load_loss_weights_schemea():
+    w = load_loss_weights("schemea", ["a", "b"], {"a": 4.7, "b": 0.4})
+    assert w[0] == pytest.approx(4.7) and w[1] == pytest.approx(0.4)
+
+
+def test_load_loss_weights_benign_from_json(tmp_path):
+    p = tmp_path / "w.json"
+    p.write_text(_json.dumps({"a": 2.0, "b": 3.0}))
+    w = load_loss_weights("benign", ["a", "b"], {}, str(p))
+    assert w[0] == pytest.approx(2.0) and w[1] == pytest.approx(3.0)
+
+
+def test_load_loss_weights_benign_needs_json():
+    with pytest.raises(ValueError):
+        load_loss_weights("benign", ["a"], {})
+
+
+def test_load_loss_weights_rejects_unknown():
+    with pytest.raises(ValueError):
+        load_loss_weights("bogus", ["a"], {})

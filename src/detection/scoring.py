@@ -63,6 +63,29 @@ def make_weight_vec(scoring: str,
     raise ValueError(f"unknown scoring mode: {scoring!r}")
 
 
+def load_loss_weights(mode: str, feature_names: list,
+                      attack_weight_dict: dict, json_path: str = None) -> np.ndarray:
+    """Training-loss weight vector for the ablation.
+
+    mode: "uniform" (ones) | "schemea" (attack_weight_dict) | "benign" (from json_path).
+    Returns (F,) float32 aligned to feature_names.
+    """
+    n = len(feature_names)
+    if mode == "uniform":
+        return np.ones(n, dtype=np.float32)
+    if mode == "schemea":
+        return np.array([attack_weight_dict.get(f, 1.0) for f in feature_names],
+                        dtype=np.float32)
+    if mode == "benign":
+        if not json_path:
+            raise ValueError("benign loss-weights requires json_path")
+        import json
+        with open(json_path) as f:
+            d = json.load(f)
+        return np.array([float(d[f]) for f in feature_names], dtype=np.float32)
+    raise ValueError(f"unknown loss-weights mode: {mode!r}")
+
+
 def per_feature_residuals_from_windows(model, wins, batch: int = 256) -> np.ndarray:
     """Per-feature squared reconstruction error (mean over time) for each window.
 
