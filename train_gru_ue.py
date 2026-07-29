@@ -30,6 +30,7 @@ from src.detection.feature_schema_ue import (
     FEATURE_NAMES, CSV_FEATURE_NAMES, FEATURE_WEIGHTS as _FW_DICT,
     add_burst_features_rows,
 )
+from src.detection.scoring import load_loss_weights
 
 _FEATURE_WEIGHTS = torch.tensor(
     [_FW_DICT.get(n, 1.0) for n in FEATURE_NAMES], dtype=torch.float32
@@ -88,7 +89,7 @@ def compute_val_loss(model: GRUAutoencoder, val_seqs: np.ndarray,
 
 
 class EarlyStopping:
-    def __init__(self, patience=10, min_delta=0.0001, checkpoint_path='checkpoint.pt'):
+    def __init__(self, patience=15, min_delta=0.0001, checkpoint_path='checkpoint.pt'):
         self.patience = patience
         self.min_delta = min_delta
         self.checkpoint_path = checkpoint_path
@@ -119,16 +120,17 @@ class EarlyStopping:
 
 
 def train(model: GRUAutoencoder, train_norm: np.ndarray, val_seqs: np.ndarray,
-          epochs: int, batch_size: int, lr: float, checkpoint_path: str):
+          epochs: int, batch_size: int, lr: float, checkpoint_path: str,
+          loss_weights=None):
     seq_len = model.seq_len
     train_seqs = prepare_sequences(train_norm, seq_len)
     dataset = torch.utils.data.TensorDataset(torch.FloatTensor(train_seqs))
     loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    fw = _FEATURE_WEIGHTS
+    fw = _FEATURE_WEIGHTS if loss_weights is None else loss_weights
 
     train_losses, val_losses = [], []
-    early_stopping = EarlyStopping(patience=10, min_delta=0.0001, checkpoint_path=checkpoint_path)
+    early_stopping = EarlyStopping(patience=15, min_delta=0.0001, checkpoint_path=checkpoint_path)
 
     print(f"[GRU] Training {epochs} epochs  seq_len={seq_len}  lr={lr}  "
           f"train_seqs={len(train_seqs)}  val_seqs={len(val_seqs)}")
@@ -180,6 +182,9 @@ def main():
     parser.add_argument("--lr",        type=float, default=0.001)
     parser.add_argument("--model-out", type=str,   default="models/gru_ue_v1.pt")
     parser.add_argument("--threshold-percentile", type=float, default=99.0)
+    parser.add_argument("--loss-weights", choices=["schemea", "uniform", "benign"],
+                        default="schemea")
+    parser.add_argument("--loss-weights-json", type=str, default=None)
     args = parser.parse_args()
 
     os.makedirs('models', exist_ok=True)
@@ -220,11 +225,16 @@ def main():
     param_count = sum(p.numel() for p in model.parameters())
     print(f"[*] GRU-AE params: {param_count:,}  features={len(FEATURE_NAMES)}")
 
+    loss_w = torch.tensor(
+        load_loss_weights(args.loss_weights, FEATURE_NAMES, _FW_DICT, args.loss_weights_json),
+        dtype=torch.float32)
+    print(f"[*] Loss weighting: {args.loss_weights}")
+
     checkpoint_path = args.model_out.replace('.pt', '_checkpoint.pt')
     train_losses, val_losses, best_epoch = train(
         model, train_norm, val_seqs,
         epochs=args.epochs, batch_size=args.batch_size, lr=args.lr,
-        checkpoint_path=checkpoint_path
+        checkpoint_path=checkpoint_path, loss_weights=loss_w,
     )
 
     losses_path = args.model_out.replace('.pt', '_losses.json')
