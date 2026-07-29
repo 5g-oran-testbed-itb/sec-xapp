@@ -63,6 +63,20 @@ The threshold is chosen so the deployed Hybrid lands at FPR(Attack) = 2.99%, usi
 
 > **Scale note:** these `Th` values live in the *benign-calibrated* weighted-MSE space and are **not** comparable to the deployed Scheme A thresholds (GRU `0.0245`, LSTM `0.023` in `models/*_threshold.json`) — a different weight vector produces a different score scale. Compare percentiles, not raw thresholds.
 
+#### How the threshold is determined
+
+It is **not** read off the ROC curve, and it never uses attack labels. It is a direct false-positive-rate calibration on benign windows ([`calibrate_hybrid_threshold`](../evaluate_scoring_comparison.py)):
+
+1. Compute the benign-calibrated weighted score `S(x)` for every window.
+2. Keep only the **benign windows** (`label==0`) of the attack file — the held-out negatives.
+3. Find the **lowest** `Th` such that the deployed **Hybrid** decision (`rule OR S>Th`) fires on **≤ 3%** of those benign windows. Because the rule engine's own false positives are fixed, this lowers the ML cut as far as possible while the combined FPR(Attack) stays under 3%.
+
+Equivalently, `Th` is the `(1 − 0.03)` quantile of the benign hybrid-score distribution — the same point you would read off the ROC curve at FPR = 3%. But the ROC/AUC here is only a threshold-**independent** summary of separability (computed over all thresholds via `roc_curve`); it is **not** the input to threshold selection. **Recall (TPR) is a consequence** of this benign-only calibration, never an input — the threshold never "sees" attack-positive windows.
+
+This inverts the deployed Scheme A convention (`per_ue_v5_results.md`), which fixes the threshold at a chosen percentile of the **validation** benign scores (e.g. P97.5) and reports FPR(Attack) as an outcome. Here we fix FPR(Attack) ≤ 3% and let the percentile be the outcome (→ ≈ P97.15 on attack-benign, P95.32 on validation-benign).
+
+> **Honesty note:** calibrating on the attack file's `label==0` windows is a mild use of test-set *benign* traffic (no attack-class labels). `FPR(Val)`, measured on the fully independent validation set, is the clean generalization cross-check.
+
 ### Global metrics @ Hybrid FPR(Attack) = 2.99%
 
 | Model | Config | Recall | Precision | F1 | FPR(Attack) | FPR(Val) | AUC |
