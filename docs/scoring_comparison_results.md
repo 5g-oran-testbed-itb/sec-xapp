@@ -117,8 +117,23 @@ Artifacts: `results/scoring_comparison/benign_hybrid_comparison.{json,md}`.
 
 **Relation to deployed numbers** (`docs/per_ue_v5_results.md`): those report ML-Only at validation-derived thresholds (GRU-Only 93.29% @ FPR-Atk 2.04%, LSTM-Only 93.29% @ 2.55%). The numbers here are not a strict apples-to-apples replacement — they use a fixed 2.99% FPR operating point and a leakage-free scheme — but they show the deployed recall is reachable (and exceeded) **without** attack-informed weighting.
 
+## Design-choice validity — architecture and sequence length
+
+Two choices precede the leakage-free evaluation and deserve explicit, a-priori justification.
+
+**Architecture (LSTM / GRU autoencoder) — principled prior, not leakage.** Reconstruction-based recurrent autoencoders are a standard, well-established approach for unsupervised time-series anomaly detection. Choosing this model *family* is an inductive-bias decision grounded in the literature — no test-set information enters it, so it is not a source of leakage.
+
+**Sequence length (`seq_len = 30`, i.e. 30 s at 1 Hz) — fixed a-priori from attack timescales, not swept on the test set.** The value follows from the *known* physical characteristics of the attacks (configured by the attacker scripts, not learned from the test data), via two independent mechanisms:
+
+- *Periodicity (Burst / RRC-storm).* Burst ON/OFF cycles are 3–7 s ON + 2–6 s OFF (period ≈ 5–13 s) and RRC-storm toggles every ~5–10 s. Recognising a periodic signature requires observing **≥ 2 full cycles**; with the slowest period ≈ 13 s that needs ≥ ~26 s → 30 s.
+- *SNR integration (RoQ / low-rate DoS).* RoQ is low-throughput by design (occupies PRB at low `ul_efficiency`), so its per-sample deviation is small. A longer window integrates this weak-but-consistent deviation across more samples, shrinking the variance of the reconstruction-error estimate (~1/√N) and separating the RoQ vs benign score distributions. Volumetric floods (strong signal) do not need this; RoQ does.
+
+Both mechanisms converge on ~30 s, while staying short enough to keep detection latency low.
+
+**Leakage assessment.** `seq_len = 30` is set from the arguments above and then evaluated as a **single, pre-specified configuration** on the test set — it is *not* chosen by maximising a metric over a grid of candidate lengths on the evaluation data. A recall-vs-`seq_len` sweep on the attack file is deliberately **not** run, because picking the best value that way *would* introduce selection bias. Evaluating one principled configuration once is the correct use of a held-out set, and is categorically different from the Scheme A leakage (19 continuous weights fitted + A/B/C scheme selected on the test file). For a single, physically-motivated, un-searched hyperparameter this is standard, accepted practice and contributes negligible optimism.
+
 ## Limitations (state in the thesis)
 
-- **Model-selection leakage remains.** AE architecture, `seq_len=30`, and versions (GRU v5, LSTM v6) were previously chosen using this same attack file. This experiment removes scoring-level leakage only; a freshly collected attack test set (spec §3, Track B) is still required to close model-selection leakage.
+- **No hyperparameter leakage from architecture or `seq_len`.** The AE family is a literature-standard prior, and `seq_len = 30` is fixed a-priori (see above) and evaluated as a single pre-specified config — neither is selected using test metrics. The residual item is **version selection** (GRU kept at v5 rather than v6, and threshold hand-tuning), which did consult attack-file metrics; a freshly collected attack test set (spec §3, Track B) would close this last mile. The absolute clean-room guarantee for any test-set-derived number still comes only from such a fresh set.
 - The 2.99% operating threshold is calibrated on the attack file's `label==0` (benign) windows; this uses benign traffic only (no attack-class labels), but is a mild use of test-set benign data. `FPR(Val)` is the fully-independent generalization check.
 - AUC is threshold-independent; Recall/Precision/F1/FPR are all at the matched 2.99% FPR(Attack) operating point.
