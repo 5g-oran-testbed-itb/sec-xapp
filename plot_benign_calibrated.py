@@ -160,6 +160,26 @@ def fig_score_dist(data):
         _save(fig, f"score_dist_{mt}.png")
 
 
+def fig_confusion(data):
+    for mt in ["gru", "lstm"]:
+        cm = data[mt]["ev"]["hybrid"]["confusion"]
+        M = np.array([[cm["tn"], cm["fp"]], [cm["fn"], cm["tp"]]], dtype=float)
+        fig, ax = plt.subplots(figsize=(5.6, 5))
+        im = ax.imshow(M, cmap="Blues")
+        ax.set_xticks([0, 1]); ax.set_xticklabels(["Pred Normal", "Pred Anomaly"])
+        ax.set_yticks([0, 1]); ax.set_yticklabels(["Actual Benign", "Actual Attack"])
+        vmax = M.max()
+        for i in range(2):
+            for j in range(2):
+                ax.text(j, i, f"{int(M[i, j]):,}", ha="center", va="center",
+                        fontsize=15, fontweight="bold",
+                        color="white" if M[i, j] > 0.5 * vmax else INK)
+        ax.set_title(f"Confusion Matrix — {mt.upper()} Hybrid (benign-cal)\n"
+                     f"@ FPR(Attack) 2.99%", fontweight="bold")
+        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        _save(fig, f"confusion_hybrid_{mt}.png")
+
+
 def fig_scheme_comparison(data):
     schemes = [("uniform", C_UNIFORM), ("benign", C_BENIGN), ("attack", C_SCHEMEA)]
     labels_scheme = {"uniform": "Uniform", "benign": "Benign-cal (clean)",
@@ -191,6 +211,7 @@ def main():
     fig_roc(data)
     fig_per_class(data)
     fig_score_dist(data)
+    fig_confusion(data)
     fig_scheme_comparison(data)
     print(f"\nDone. {len(os.listdir(OUT))} figures in {OUT}/")
 
