@@ -68,7 +68,8 @@ def load_loss_weights(mode: str, feature_names: list,
     """Training-loss weight vector for the ablation.
 
     mode: "uniform" (ones) | "schemea" (attack_weight_dict) | "benign" (from json_path).
-    Returns (F,) float32 aligned to feature_names.
+    Benign weights are normalized to mean 1 so only relative emphasis changes,
+    not the aggregate loss/gradient scale. Scheme A remains backward-compatible.
     """
     n = len(feature_names)
     if mode == "uniform":
@@ -82,7 +83,8 @@ def load_loss_weights(mode: str, feature_names: list,
         import json
         with open(json_path) as f:
             d = json.load(f)
-        return np.array([float(d[f]) for f in feature_names], dtype=np.float32)
+        weights = np.array([float(d[f]) for f in feature_names], dtype=np.float32)
+        return weights / weights.mean()
     raise ValueError(f"unknown loss-weights mode: {mode!r}")
 
 

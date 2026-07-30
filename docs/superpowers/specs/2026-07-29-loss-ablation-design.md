@@ -23,7 +23,7 @@ Model AE deploy (`gru_ue_v5.pt`, `lstm_ue_v6.pt`) dilatih dengan `weighted_mse` 
 Benign-scale loss butuh residual dari model terlatih (sirkular). Diselesaikan dua tahap:
 
 1. **Pass-1:** latih AE dengan **uniform MSE** (bobot=1; bebas serangan).
-2. **Derive:** hitung residual kuadrat per-fitur pada **data training benign** dari model pass-1; bobot `w_j = 1/(median(e_j)+MAD(e_j)+ε)`, di-cap `10×median(w)` (reuse [`benign_calibrated_weights`](../../../src/detection/scoring.py)). Simpan ke JSON. Bobot **beku** (konstanta, bebas serangan).
+2. **Derive:** hitung residual kuadrat per-fitur pada **data training benign** dari model pass-1; bobot `w_j = 1/(median(e_j)+MAD(e_j)+ε)`, di-cap `10×median(w)` (reuse [`benign_calibrated_weights`](../../../src/detection/scoring.py)). Simpan ke JSON, lalu normalisasi ke mean 1 saat dipakai dalam loss. Normalisasi mempertahankan rasio kepentingan antarfitur tanpa mengubah skala agregat loss/gradient terhadap uniform MSE. Bobot **beku** (konstanta, bebas serangan).
 3. **Pass-2:** latih ulang AE dari nol dengan bobot beku itu di loss.
 
 Bobot loss diturunkan dari **training benign** (bukan validation) agar validation tetap murni untuk early-stopping/threshold. Pipeline fitur mengikuti `df_to_raw()` training apa adanya (konsisten antar-varian).
@@ -37,7 +37,7 @@ Per arsitektur (GRU, LSTM), dua varian loss — **semua** dengan skrip, hyperpar
 | `uniform` | 1 (semua fitur) | — (= Pass-1) |
 | `benign` | `1/(median+MAD)` | residual training benign model uniform (Pass-2) |
 
-Total 4 model. Konfigurasi tetap: dropout 0.1 (default model), patience 15, max epoch 200, batch 32, lr 1e-3, MinMaxScaler fit di training. Arsitektur = default `train_*_ue.py` (tidak diubah).
+Total 4 model. Konfigurasi tetap: seed 42, dropout 0.1 (default model), patience 15, max epoch 200, batch 32, lr 1e-3, MinMaxScaler fit di training. Seed yang sama mengunci inisialisasi model dan urutan shuffle agar pasangan `uniform`/ `benign` berbeda hanya pada loss. Arsitektur = default `train_*_ue.py` (tidak diubah).
 
 ## 5. Penamaan artefak
 

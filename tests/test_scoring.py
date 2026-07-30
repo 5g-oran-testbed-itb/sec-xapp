@@ -80,9 +80,10 @@ def test_load_loss_weights_schemea():
 
 def test_load_loss_weights_benign_from_json(tmp_path):
     p = tmp_path / "w.json"
-    p.write_text(_json.dumps({"a": 2.0, "b": 3.0}))
+    p.write_text(_json.dumps({"a": 2.0, "b": 6.0}))
     w = load_loss_weights("benign", ["a", "b"], {}, str(p))
-    assert w[0] == pytest.approx(2.0) and w[1] == pytest.approx(3.0)
+    assert w == pytest.approx([0.5, 1.5])
+    assert w.mean() == pytest.approx(1.0)
 
 
 def test_load_loss_weights_benign_needs_json():
