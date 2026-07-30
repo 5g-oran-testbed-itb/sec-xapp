@@ -2,6 +2,12 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax.
 
+> **Scope override (approved 2026-07-30):** At the user's explicit direction,
+> the executed ablation contains only `uniform` and `benign` loss for GRU
+> and LSTM (4 models). Scheme A remains supported by the backward-compatible
+> training CLI but is not retrained, evaluated, or plotted. This override
+> supersedes Scheme-A/6-model references in Tasks 4–6 below.
+
 **Goal:** Retrain the per-UE AEs with a non-attack training loss (benign-scale, plus uniform baseline and Scheme-A control), then evaluate all variants under the leakage-free benign-calibrated scoring to see if the training-loss weighting matters.
 
 **Architecture:** Add a `--loss-weights {schemea,uniform,benign}` switch to the training scripts (weights come from a shared, tested helper). A two-pass procedure produces the benign-scale loss weights (pass-1 uniform model → per-feature benign residual weights → pass-2). All 6 models (3 variants × GRU/LSTM) train with identical config; only the loss weighting differs. Evaluation reuses `evaluate_scoring_comparison.py`.

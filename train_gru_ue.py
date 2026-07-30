@@ -31,6 +31,7 @@ from src.detection.feature_schema_ue import (
     add_burst_features_rows,
 )
 from src.detection.scoring import load_loss_weights
+from src.detection.training_utils import set_reproducible_seed
 
 _FEATURE_WEIGHTS = torch.tensor(
     [_FW_DICT.get(n, 1.0) for n in FEATURE_NAMES], dtype=torch.float32
@@ -185,8 +186,11 @@ def main():
     parser.add_argument("--loss-weights", choices=["schemea", "uniform", "benign"],
                         default="schemea")
     parser.add_argument("--loss-weights-json", type=str, default=None)
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed for reproducible training (default: 42)")
     args = parser.parse_args()
 
+    set_reproducible_seed(args.seed)
     os.makedirs('models', exist_ok=True)
 
     print(f"[*] Loading training CSV: {args.train}")

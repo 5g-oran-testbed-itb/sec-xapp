@@ -1,6 +1,6 @@
 # AE Loss-Weighting Ablation (Non-Attack Training Loss) — Design
 
-**Status:** Draft (awaiting user review)
+**Status:** Approved; scope revised to four non-attack models
 **Date:** 2026-07-29
 **Topic:** Menghapus bobot Scheme A (attack-derived) dari *loss training* AE, dan mengukur efeknya lewat matched-pair ablation.
 
@@ -30,22 +30,21 @@ Bobot loss diturunkan dari **training benign** (bukan validation) agar validatio
 
 ## 4. Matched-pair ablation
 
-Per arsitektur (GRU, LSTM), tiga varian loss — **semua** dengan skrip, hyperparameter, `seq_len=30`, scaler, dan data identik:
+Per arsitektur (GRU, LSTM), dua varian loss — **semua** dengan skrip, hyperparameter, `seq_len=30`, scaler, dan data identik:
 
 | Varian | Bobot loss | Sumber |
 |---|---|---|
-| `schemea` | Scheme A | `FEATURE_WEIGHTS` (baseline lama/bocor, dilatih ulang utk perbandingan adil) |
 | `uniform` | 1 (semua fitur) | — (= Pass-1) |
 | `benign` | `1/(median+MAD)` | residual training benign model uniform (Pass-2) |
 
-Total 6 model. Konfigurasi tetap: dropout 0.1 (default model), patience 15, max epoch 200, batch 32, lr 1e-3, MinMaxScaler fit di training. Arsitektur = default `train_*_ue.py` (tidak diubah).
+Total 4 model. Konfigurasi tetap: dropout 0.1 (default model), patience 15, max epoch 200, batch 32, lr 1e-3, MinMaxScaler fit di training. Arsitektur = default `train_*_ue.py` (tidak diubah).
 
 ## 5. Penamaan artefak
 
 Folder baru `models/ablation_loss/` — model deploy v5/v6 **tidak disentuh**:
 ```
-models/ablation_loss/gru_ue_loss{schemea,uniform,benign}.pt  (+ _scaler.pkl, _threshold.json)
-models/ablation_loss/lstm_ue_loss{schemea,uniform,benign}.pt (+ ...)
+models/ablation_loss/gru_ue_loss{uniform,benign}.pt  (+ _scaler.pkl, _threshold.json)
+models/ablation_loss/lstm_ue_loss{uniform,benign}.pt (+ ...)
 models/ablation_loss/gru_ue_lossbenign_weights.json          (bobot loss beku)
 models/ablation_loss/lstm_ue_lossbenign_weights.json
 ```
@@ -58,22 +57,21 @@ Laporkan tabel gabungan: (varian loss × model × {Rule/ML/Hybrid}) → Recall, 
 
 ## 7. Aturan keputusan
 
-- Jika `benign` ≥ `uniform` (dan keduanya ≈/≥ `schemea`) → adopsi **benign-scale loss** sebagai konfigurasi final bebas-kebocoran.
+- Jika `benign` unggul secara material atas `uniform` → adopsi **benign-scale loss** sebagai konfigurasi final bebas-kebocoran.
 - Jika `benign` ≈ `uniform` → adopsi **uniform loss** (lebih sederhana, tanpa two-pass) — ablation membenarkan pilihan yang lebih murah.
-- Jika `schemea` unggul jelas → catat bahwa loss weighting attack-informed memberi keuntungan nyata (dan itu trade-off vs kebersihan), lalu putuskan sadar.
 
 ## 8. Permukaan implementasi (untuk fase plan)
 
 - Modifikasi [`train_gru_ue.py`](../../../train_gru_ue.py) & [`train_lstm_ue.py`](../../../train_lstm_ue.py): tambah `--loss-weights {schemea,uniform,benign}` + `--loss-weights-json <path>`; helper `select_loss_weights()` yang mengembalikan tensor bobot. Default `schemea` (backward-compatible).
 - Skrip baru `derive_loss_weights.py`: pass-1 model → bobot benign-scale JSON.
-- Skrip baru `run_loss_ablation.py`: orkestrasi train 6 model + derive + evaluasi + tabel gabungan (reuse `evaluate_scoring_comparison`).
+- Evaluator ablation: evaluasi 4 model + tabel gabungan (reuse `evaluate_scoring_comparison`).
 - Skrip figur `plot_loss_ablation.py` → `eval_figures/loss_ablation/`.
 - Unit test: `select_loss_weights()` (uniform→ones, schemea→dict, benign→JSON), reuse test bobot benign yang ada.
 - Tidak menyentuh xApp C runtime.
 
 ## 9. Kriteria keberhasilan
 
-- 6 model terlatih di `models/ablation_loss/`; v5/v6 utuh.
+- 4 model terlatih di `models/ablation_loss/`; v5/v6 utuh.
 - Tabel ablation (varian × model × config) + figur perbandingan tersimpan.
 - Keputusan §7 terdokumentasi di `docs/loss_ablation_results.md`.
 - Semua varian dievaluasi dengan skoring & threshold-calibration yang identik (hanya loss training yang beda).
