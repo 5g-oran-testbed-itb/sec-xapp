@@ -56,6 +56,7 @@ def test_build_markdown_reports_only_uniform_and_benign_matched_pairs():
     assert "LSTM | benign | 91.00% | 92.00% | 93.00% | 94.00%" in report
     assert "Scheme A" not in report
     assert "schemea" not in report
+    assert "single-seed" in report
 
 
 def test_validate_results_rejects_hybrid_above_target_fpr():

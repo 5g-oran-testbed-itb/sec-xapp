@@ -47,6 +47,12 @@ def build_markdown(results, target_fpr):
             f"Hybrid FPR(Attack) < {target_fpr * 100:.0f}%."
         ),
         "",
+        (
+            "**Uncertainty note:** this is a deterministic single-seed (42) "
+            "ablation. Differences are descriptive; no confidence interval or "
+            "statistical-significance claim is made without repeated seeds."
+        ),
+        "",
         "## Thresholds",
         "",
         "| Model | Training loss | Th | Percentile (val benign) | Percentile (attack benign) |",

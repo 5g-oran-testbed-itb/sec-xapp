@@ -1,0 +1,266 @@
+{
+  "gru": {
+    "uniform": {
+      "threshold": 0.009038,
+      "threshold_pct_val": 95.6,
+      "threshold_pct_attack_benign": 97.15,
+      "rule_only": {
+        "recall": 0.8578,
+        "precision": 0.9751,
+        "f1": 0.9127,
+        "fpr_attack": 0.0086,
+        "fpr_val": 0.0293,
+        "auc": null,
+        "per_class_recall": {
+          "ul_flood": 0.9718,
+          "dl_flood": 0.9676,
+          "burst": 0.9503,
+          "roq": 0.6528
+        },
+        "confusion": {
+          "tp": 1918,
+          "fp": 49,
+          "tn": 5674,
+          "fn": 318
+        }
+      },
+      "ml_only": {
+        "recall": 0.9647,
+        "precision": 0.9297,
+        "f1": 0.9469,
+        "fpr_attack": 0.0285,
+        "fpr_val": 0.044,
+        "auc": 0.9895,
+        "per_class_recall": {
+          "ul_flood": 0.9742,
+          "dl_flood": 0.882,
+          "burst": 0.9848,
+          "roq": 0.9772
+        },
+        "confusion": {
+          "tp": 2157,
+          "fp": 163,
+          "tn": 5560,
+          "fn": 79
+        }
+      },
+      "hybrid": {
+        "recall": 0.9826,
+        "precision": 0.9278,
+        "f1": 0.9544,
+        "fpr_attack": 0.0299,
+        "fpr_val": 0.0593,
+        "auc": null,
+        "per_class_recall": {
+          "ul_flood": 0.9789,
+          "dl_flood": 0.9676,
+          "burst": 0.989,
+          "roq": 0.9853
+        },
+        "confusion": {
+          "tp": 2197,
+          "fp": 171,
+          "tn": 5552,
+          "fn": 39
+        }
+      }
+    },
+    "benign": {
+      "threshold": 0.005493,
+      "threshold_pct_val": 94.98,
+      "threshold_pct_attack_benign": 97.15,
+      "rule_only": {
+        "recall": 0.8578,
+        "precision": 0.9751,
+        "f1": 0.9127,
+        "fpr_attack": 0.0086,
+        "fpr_val": 0.0293,
+        "auc": null,
+        "per_class_recall": {
+          "ul_flood": 0.9718,
+          "dl_flood": 0.9676,
+          "burst": 0.9503,
+          "roq": 0.6528
+        },
+        "confusion": {
+          "tp": 1918,
+          "fp": 49,
+          "tn": 5674,
+          "fn": 318
+        }
+      },
+      "ml_only": {
+        "recall": 0.9767,
+        "precision": 0.9305,
+        "f1": 0.9531,
+        "fpr_attack": 0.0285,
+        "fpr_val": 0.0502,
+        "auc": 0.9892,
+        "per_class_recall": {
+          "ul_flood": 0.9906,
+          "dl_flood": 0.882,
+          "burst": 0.9945,
+          "roq": 0.9946
+        },
+        "confusion": {
+          "tp": 2184,
+          "fp": 163,
+          "tn": 5560,
+          "fn": 52
+        }
+      },
+      "hybrid": {
+        "recall": 0.9897,
+        "precision": 0.9283,
+        "f1": 0.958,
+        "fpr_attack": 0.0299,
+        "fpr_val": 0.0593,
+        "auc": null,
+        "per_class_recall": {
+          "ul_flood": 0.9906,
+          "dl_flood": 0.9676,
+          "burst": 0.9945,
+          "roq": 0.9946
+        },
+        "confusion": {
+          "tp": 2213,
+          "fp": 171,
+          "tn": 5552,
+          "fn": 23
+        }
+      }
+    }
+  },
+  "lstm": {
+    "uniform": {
+      "threshold": 0.011033,
+      "threshold_pct_val": 96.05,
+      "threshold_pct_attack_benign": 97.15,
+      "rule_only": {
+        "recall": 0.8578,
+        "precision": 0.9751,
+        "f1": 0.9127,
+        "fpr_attack": 0.0086,
+        "fpr_val": 0.0293,
+        "auc": null,
+        "per_class_recall": {
+          "ul_flood": 0.9718,
+          "dl_flood": 0.9676,
+          "burst": 0.9503,
+          "roq": 0.6528
+        },
+        "confusion": {
+          "tp": 1918,
+          "fp": 49,
+          "tn": 5674,
+          "fn": 318
+        }
+      },
+      "ml_only": {
+        "recall": 0.9772,
+        "precision": 0.9306,
+        "f1": 0.9533,
+        "fpr_attack": 0.0285,
+        "fpr_val": 0.0395,
+        "auc": 0.9902,
+        "per_class_recall": {
+          "ul_flood": 0.9859,
+          "dl_flood": 0.9027,
+          "burst": 0.9917,
+          "roq": 0.992
+        },
+        "confusion": {
+          "tp": 2185,
+          "fp": 163,
+          "tn": 5560,
+          "fn": 51
+        }
+      },
+      "hybrid": {
+        "recall": 0.987,
+        "precision": 0.9281,
+        "f1": 0.9567,
+        "fpr_attack": 0.0299,
+        "fpr_val": 0.0576,
+        "auc": null,
+        "per_class_recall": {
+          "ul_flood": 0.9859,
+          "dl_flood": 0.9676,
+          "burst": 0.9917,
+          "roq": 0.992
+        },
+        "confusion": {
+          "tp": 2207,
+          "fp": 171,
+          "tn": 5552,
+          "fn": 29
+        }
+      }
+    },
+    "benign": {
+      "threshold": 0.007652,
+      "threshold_pct_val": 94.3,
+      "threshold_pct_attack_benign": 97.15,
+      "rule_only": {
+        "recall": 0.8578,
+        "precision": 0.9751,
+        "f1": 0.9127,
+        "fpr_attack": 0.0086,
+        "fpr_val": 0.0293,
+        "auc": null,
+        "per_class_recall": {
+          "ul_flood": 0.9718,
+          "dl_flood": 0.9676,
+          "burst": 0.9503,
+          "roq": 0.6528
+        },
+        "confusion": {
+          "tp": 1918,
+          "fp": 49,
+          "tn": 5674,
+          "fn": 318
+        }
+      },
+      "ml_only": {
+        "recall": 0.9758,
+        "precision": 0.9305,
+        "f1": 0.9526,
+        "fpr_attack": 0.0285,
+        "fpr_val": 0.057,
+        "auc": 0.9907,
+        "per_class_recall": {
+          "ul_flood": 0.9883,
+          "dl_flood": 0.882,
+          "burst": 0.9931,
+          "roq": 0.9946
+        },
+        "confusion": {
+          "tp": 2182,
+          "fp": 163,
+          "tn": 5560,
+          "fn": 54
+        }
+      },
+      "hybrid": {
+        "recall": 0.9888,
+        "precision": 0.9282,
+        "f1": 0.9576,
+        "fpr_attack": 0.0299,
+        "fpr_val": 0.0643,
+        "auc": null,
+        "per_class_recall": {
+          "ul_flood": 0.9883,
+          "dl_flood": 0.9676,
+          "burst": 0.9931,
+          "roq": 0.9946
+        },
+        "confusion": {
+          "tp": 2211,
+          "fp": 171,
+          "tn": 5552,
+          "fn": 25
+        }
+      }
+    }
+  }
+}
