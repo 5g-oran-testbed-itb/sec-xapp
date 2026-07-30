@@ -1,0 +1,43 @@
+{
+  "experiment": "non_attack_loss_ablation",
+  "date": "2026-07-30",
+  "seed": 42,
+  "training_data": "csv/dataset_training_ue_juni.csv",
+  "validation_data": "csv/dataset_validation_ue_juni.csv",
+  "sequence_length": 30,
+  "max_epochs": 200,
+  "batch_size": 32,
+  "learning_rate": 0.001,
+  "early_stopping_patience": 15,
+  "early_stopping_min_delta": 0.0001,
+  "loss_variants": {
+    "uniform": "all feature weights equal 1",
+    "benign": "inverse median+MAD weights from uniform-model training residuals, capped then normalized to mean 1"
+  },
+  "models": {
+    "gru_uniform": {
+      "file": "gru_ue_lossuniform.pt",
+      "best_epoch": 85
+    },
+    "gru_benign": {
+      "file": "gru_ue_lossbenign.pt",
+      "best_epoch": 88,
+      "weight_file": "gru_ue_lossbenign_weights.json"
+    },
+    "lstm_uniform": {
+      "file": "lstm_ue_lossuniform.pt",
+      "best_epoch": 89
+    },
+    "lstm_benign": {
+      "file": "lstm_ue_lossbenign.pt",
+      "best_epoch": 65,
+      "weight_file": "lstm_ue_lossbenign_weights.json"
+    }
+  },
+  "evaluation": {
+    "script": "eval_loss_ablation.py",
+    "scoring": "benign_calibrated",
+    "target_hybrid_fpr_attack": 0.03,
+    "results": "results/loss_ablation/loss_ablation.json"
+  }
+}
