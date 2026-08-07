@@ -4,7 +4,7 @@
 
 **Goal:** Turn `sec-xapp` into a reproducible TA attachment repo: safe local backup first, strip internal thesis-drafting documents and junk from the public tree, split vendor code (FlexRIC/srsRAN) into pinned submodules under `5g-oran-testbed-itb`, reorganize scripts/deploy/observability, and write README documentation covering code, reproduction steps, and 3-node deployment.
 
-**Architecture:** Work happens on a new branch `repo-cleanup` created from current `master` WITHOUT committing the 149 pre-existing uncommitted changes (those get a lossless git-object backup instead, per user instruction). Vendor codebases (FlexRIC, srsRAN_Project) get cleaned and pushed as forks under the `5g-oran-testbed-itb` GitHub org, then wired back as pinned git submodules. Thesis-drafting documents are removed from the tracked tree and added to `.gitignore` by specific pattern (not blanket `*.md`).
+**Architecture:** Work happens on a new branch `repo-cleanup` created from the current branch `benign-calibrated-scoring-eval` (confirmed via `git merge-base` to be a strict superset of `master` — `master`'s tip is an ancestor, so branching from the current branch loses nothing relative to `master`) WITHOUT committing the 149 pre-existing uncommitted changes (those get a lossless git-object backup instead, per user instruction). Vendor codebases (FlexRIC, srsRAN_Project) get cleaned and pushed as forks under the `5g-oran-testbed-itb` GitHub org, then wired back as pinned git submodules. Thesis-drafting documents are removed from the tracked tree and added to `.gitignore` by specific pattern (not blanket `*.md`).
 
 **Tech Stack:** git (branch, submodule, rm), bash, ssh/sshpass (read-only investigation + config fetch only), Python (existing scripts, untouched).
 
@@ -18,11 +18,11 @@
 
 ## Task 1: Local backup of current uncommitted work
 
-Captures the 149 pending changes losslessly, outside `master`, before any destructive operation touches the working tree.
+Captures the 149 pending changes losslessly, outside the current branch history, before any destructive operation touches the working tree.
 
 **Files:** none created in the repo; backup lives in `~/sec-xapp-backup-2026-08-08/` and a local git ref.
 
-- [ ] **Step 1: Snapshot tracked modifications as a git object (no commit to master, no working-tree change)**
+- [ ] **Step 1: Snapshot tracked modifications as a git object (no commit to any branch, no working-tree change)**
 
 ```bash
 cd /home/telmat/sec-xapp
@@ -68,22 +68,30 @@ Expected: no output (diff empty) — every untracked file present in the backup.
 
 **Files:** none.
 
-- [ ] **Step 1: Branch from current `master` tip**
+- [ ] **Step 1: Confirm the current branch, then branch from its tip**
 
 ```bash
 cd /home/telmat/sec-xapp
+git branch --show-current
+git merge-base master HEAD
+git rev-parse master
+```
+
+Expected: current branch is `benign-calibrated-scoring-eval`; the two hashes from `merge-base` and `rev-parse master` match (confirms `master` is a strict ancestor — branching from here loses nothing relative to `master`). If they don't match, STOP and report BLOCKED rather than guessing which branch is the right base.
+
+```bash
 git branch repo-cleanup
 git checkout repo-cleanup
 git branch --show-current
 ```
 
-Expected: `repo-cleanup`. The 149 uncommitted changes remain in the working tree exactly as before (branch creation doesn't touch them) — they now sit on top of `repo-cleanup` instead of `master`.
+Expected: `repo-cleanup`. The 149 uncommitted changes remain in the working tree exactly as before (branch creation doesn't touch them) — they now sit on top of `repo-cleanup` instead of `benign-calibrated-scoring-eval`.
 
-- [ ] **Step 2: Confirm `master` is untouched**
+- [ ] **Step 2: Confirm the original branch is untouched**
 
 ```bash
-git log master -1 --oneline
-git diff master repo-cleanup --stat
+git log benign-calibrated-scoring-eval -1 --oneline
+git diff benign-calibrated-scoring-eval repo-cleanup --stat
 ```
 
 Expected: `git diff` shows no output (same commit, only working-tree state differs, which git diff between branches doesn't show since working tree isn't part of either branch's history).
@@ -1160,9 +1168,9 @@ Expected: the script's argparse help prints, confirming the path documented in t
 rm -rf /tmp/sec-xapp-clone-test
 ```
 
-- [ ] **Step 6: Report to user** — summarize final `.git` size, working-tree size, submodule pin commits, and the two borderline doc decisions flagged in Task 3 (Step 6 note on `PRD_Security_xApp.md`) and Task 6 (gnb.yaml finding) for their final sign-off before merging `repo-cleanup` into `master` or pushing to `5g-oran-testbed-itb/sec-xapp`.
+- [ ] **Step 6: Report to user** — summarize final `.git` size, working-tree size, submodule pin commits, and the two borderline doc decisions flagged in Task 3 (Step 6 note on `PRD_Security_xApp.md`) and Task 6 (gnb.yaml finding) for their final sign-off before merging `repo-cleanup` into `benign-calibrated-scoring-eval`/`master` or pushing to `5g-oran-testbed-itb/sec-xapp`.
 
-**Merging to `master` and pushing to the public org are NOT included as automatic steps in this plan** — per the safety principle of confirming before actions visible to others, that merge/push happens only after the user reviews the `repo-cleanup` branch's final commit log.
+**Merging back and pushing to the public org are NOT included as automatic steps in this plan** — per the safety principle of confirming before actions visible to others, that merge/push happens only after the user reviews the `repo-cleanup` branch's final commit log.
 
 ---
 
