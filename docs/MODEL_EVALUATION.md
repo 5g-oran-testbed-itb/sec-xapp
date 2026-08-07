@@ -183,3 +183,41 @@ CV fix mengubah distribusi fitur idle normal secara fundamental:
 Dengan formula lama, model belajar "normal = CV tinggi, UL Flood = CV rendah" → UL Flood terdeteksi karena CV-nya berbeda dari training distribution. Setelah fix, idle normal juga punya CV≈0 — sama dengan UL Flood — sehingga model tidak bisa membedakan keduanya.
 
 **Kesimpulan:** CV fix tidak bisa dilakukan tanpa mengorbankan UL Flood detection. FPR 7.55% adalah biaya dari CV-based discrimination yang diperlukan. Stage 2 FPR (1.37%) sudah acceptable — v16+v22 dual ensemble tetap menjadi production model.
+
+## Hyperparameter Final
+
+Extracted verbatim from `docs/lampiran_hyperparameter_ppt.md` (removed — internal presentation appendix) before deletion, since it documented the final trained-model hyperparameters and are not duplicated elsewhere.
+
+### Perbandingan Karakteristik Utama & Hiperparameter (Overview)
+
+| Karakteristik / Dimensi | LSTM-Autoencoder (Sistem Rizqi) | BiGRU-Autoencoder (Sistem Nabiel) |
+| :--- | :---: | :---: |
+| **Tipe Arsitektur Model** | Unidirectional LSTM Autoencoder | Bidirectional GRU (BiGRU) Autoencoder |
+| **Arah Traversal (Directionality)**| Satu Arah (Maju saja / Unidirectional) | Dua Arah (Maju & Mundur / Bidirectional) |
+| **Mekanisme Atensi** | **Temporal Attention** setelah Encoder | **Temporal Attention** setelah Encoder |
+| **Ukuran Window Input** | 30 Timestep × 19 Fitur per-UE | 30 Timestep × 19 Fitur per-UE |
+| **Dimensi Latent Space ($z$)** | 32 Vector (Representasi Kompresi) | 32 Vector (Representasi Kompresi) |
+| **Ukuran Hidden Layer (Encoder)** | `[64, 32]` (Unidirectional) | `[64, 32]` (Bidirectional, output $64 \times 2 = 128$) |
+| **Ukuran Hidden Layer (Decoder)** | `[32, 64]` (Unidirectional) | `[32, 64]` (Unidirectional) |
+| **Total Parameter Latih** | **67.997** parameter | **90.606** parameter (~33.2% lebih banyak) |
+| **Teknik Pencegahan Overfitting** | **Dropout (p=0.1)** + **Early Stopping** | **Dropout (p=0.1)** + **Early Stopping** |
+| **Fungsi Pre-scaling Data** | MinMaxScaler (Baked-in ONNX) | MinMaxScaler (Baked-in ONNX) |
+| **Metode Penilaian Anomali** | Scheme A Weighted MSE (19 Fitur) | Scheme A Weighted MSE (19 Fitur) |
+| **Kalibrasi Threshold Keputusan**| **0,027047** (P96.8) / **0,023000** (Tuned RoQ Recall > 85%) | **0,024500** (Tuned P97.5, UL Flood Recall > 85%) |
+| **Latensi Inferensi C-Native** | **0,069 ms** (2,4× lebih cepat) | **0,166 ms** (Traversal 2-arah lebih berat) |
+| **Ukuran File Model (ONNX)** | **278 KB** | **366 KB** |
+| **Overhead CPU RIC Node** | **2,30%** (Sangat efisien) | **2,50%** |
+| **ROC-AUC Global (Validation)**| 0,9791 (97,91%) | **0,9878 (98,78%)** |
+| **Sensitivitas Serangan RoQ (Recall)**| Hybrid: **87,13%** | Hybrid: **98,53%** (Sensitivitas tinggi) |
+
+### Hiperparameter Pelatihan & Pipa Pemasangan ONNX (C-Native)
+
+| Hiperparameter Pelatihan | Parameter & Spesifikasi |
+| :--- | :--- |
+| **Dataset Pelatihan** | Hanya trafik normal (*unsupervised anomaly detection*) |
+| **Optimizer** | Adam (`learning_rate = 0.001`, `weight_decay = 1e-5`) |
+| **Fungsi Loss Pelatihan** | Mean Squared Error (MSE) ter-normalisasi |
+| **Ukuran Batch (Batch Size)** | 64 |
+| **Pencegahan Overfitting** | Early Stopping (Patience = 10 epoch) + Dropout (p=0.1) |
+| **Kalibrasi Threshold Keputusan** | **LSTM-AE v6**: `0,027047` (P96.8) / `0,023000` (Tuned RoQ Recall > 85%)<br>**BiGRU-AE v5**: `0,024500` (Tuned P97.5, UL Flood Recall > 85% & FPR < 3%) |
+| **Pipa Pemasangan ONNX** | Pembobotan skala `MinMaxScaler` ($a \cdot x + b$) dan matriks bobot *Scheme A* di-embed langsung ke dalam grafik komputasi ONNX (`export_onnx_ue.py`). C-native xApp hanya mengeksekusi ONNX dan membandingkan skor tunggal terhadap threshold. |

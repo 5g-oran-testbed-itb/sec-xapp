@@ -10,3 +10,19 @@ env/
 __pycache__/
 *.pyc
 security-xapp/venv
+
+# Thesis-drafting documents (internal writing process — not part of the
+# public reproducibility repo). Technical docs, methodology, and results
+# reports are NOT matched by these patterns and stay tracked.
+docs/BAB*.md
+docs/*Dokumen*.md
+docs/PROMPT-*.md
+docs/STATUS_DAN_RENCANA*.md
+docs/C_XAPP_PROGRESS.md
+docs/*Seminar*.pdf
+docs/per_ue_results_slide.html
+docs/HANDOVER_*.md
+docs/opsi_b_perbaikan_audit.md
+docs/perubahan_naskah_opsi_b.md
+docs/lampiran_hyperparameter_ppt.md
+docs/eval_dual_v16_v22.log
