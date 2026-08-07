@@ -1,8 +1,0 @@
-{
-  "mu": 138008.21875,
-  "sigma": 543207.875,
-  "threshold": 2793713.029999951,
-  "percentile": 99.0,
-  "fpr_pct": 1.0044642857142858,
-  "source": "validation_set"
-}
