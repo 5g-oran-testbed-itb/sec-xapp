@@ -2,6 +2,7 @@
 # ==============================================================================
 # Robust Script to Patch Core Network Configs (SMF/AMF/NSSF) for Slice SST=2
 # ==============================================================================
+set -e
 
 CORE_IP="${CORE_IP:-10.91.2.4}"
 CORE_USER="${CORE_USER:-telmat}"
@@ -105,13 +106,13 @@ scp -o StrictHostKeyChecking=no /tmp/nssf.yaml "$CORE_USER@$CORE_IP":/tmp/nssf.y
 echo "[3/4] Overwriting /etc/open5gs configurations on Core node using sudo..."
 # Requires passwordless sudo (NOPASSWD) configured for $CORE_USER on the Core
 # node, since no password is stored or transmitted by this script.
-ssh -o StrictHostKeyChecking=no "$CORE_USER@$CORE_IP" "sudo -n cp /tmp/smf.yaml /etc/open5gs/smf.yaml 2>/dev/null"
-ssh -o StrictHostKeyChecking=no "$CORE_USER@$CORE_IP" "sudo -n cp /tmp/nssf.yaml /etc/open5gs/nssf.yaml 2>/dev/null"
+ssh -o StrictHostKeyChecking=no "$CORE_USER@$CORE_IP" "sudo -n cp /tmp/smf.yaml /etc/open5gs/smf.yaml"
+ssh -o StrictHostKeyChecking=no "$CORE_USER@$CORE_IP" "sudo -n cp /tmp/nssf.yaml /etc/open5gs/nssf.yaml"
 
 echo "[4/4] Restarting Open5GS services (SMF, AMF, NSSF)..."
-ssh -o StrictHostKeyChecking=no "$CORE_USER@$CORE_IP" "sudo -n systemctl restart open5gs-smfd 2>/dev/null"
-ssh -o StrictHostKeyChecking=no "$CORE_USER@$CORE_IP" "sudo -n systemctl restart open5gs-amfd 2>/dev/null"
-ssh -o StrictHostKeyChecking=no "$CORE_USER@$CORE_IP" "sudo -n systemctl restart open5gs-nssfd 2>/dev/null"
+ssh -o StrictHostKeyChecking=no "$CORE_USER@$CORE_IP" "sudo -n systemctl restart open5gs-smfd"
+ssh -o StrictHostKeyChecking=no "$CORE_USER@$CORE_IP" "sudo -n systemctl restart open5gs-amfd"
+ssh -o StrictHostKeyChecking=no "$CORE_USER@$CORE_IP" "sudo -n systemctl restart open5gs-nssfd"
 
 # Cleanup local temp files
 rm -f /tmp/smf.yaml /tmp/nssf.yaml
