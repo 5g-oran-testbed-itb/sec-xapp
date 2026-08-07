@@ -55,12 +55,14 @@ Expected: `wc -l` shows ~119 files (149 total minus ~30 tracked-modified from St
 
 - [ ] **Step 4: Verify backup completeness**
 
+`git status --porcelain` collapses a wholly-untracked directory into a single line, while `find` on the backup lists individual files — comparing those two directly will show a spurious "diff" even when nothing is missing. Use `--untracked-files=all` so both sides are at file granularity:
+
 ```bash
-diff <(cd /home/telmat/sec-xapp && git status --porcelain | awk '/^\?\? / {print substr($0,4)}' | sed 's/^"//;s/"$//' | sort) \
+diff <(cd /home/telmat/sec-xapp && git status --porcelain --untracked-files=all | awk '/^\?\? / {print substr($0,4)}' | sed 's/^"//;s/"$//' | sort) \
      <(cd ~/sec-xapp-backup-2026-08-08 && find . -type f -printf '%P\n' | sort)
 ```
 
-Expected: no output (diff empty) — every untracked file present in the backup. If there's a diff, stop and investigate before proceeding to Task 2.
+Expected: no output, OR a diff showing only extra files present in the backup (not missing ones) — `rsync -a` copies whole untracked directories without respecting `.gitignore`, so gitignored files inside an untracked directory (e.g. `*.csv` results sitting next to tracked outputs) can legitimately appear in the backup but not in git's untracked list. That's fine — the backup being a superset is safe. If any line in the diff is missing *from the backup side* (i.e. a file git considers untracked isn't present in `~/sec-xapp-backup-2026-08-08/`), that's real data loss risk — stop and investigate before proceeding to Task 2.
 
 ---
 
