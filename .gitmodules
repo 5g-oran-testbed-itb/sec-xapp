@@ -1,0 +1,6 @@
+[submodule "vendor/flexric"]
+	path = vendor/flexric
+	url = https://github.com/5g-oran-testbed-itb/flexric-sec-xapp.git
+[submodule "vendor/srsran"]
+	path = vendor/srsran
+	url = https://github.com/5g-oran-testbed-itb/srsran-sec-xapp.git
