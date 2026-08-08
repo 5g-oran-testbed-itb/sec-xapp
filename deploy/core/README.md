@@ -1,17 +1,15 @@
 # Core Node Deployment
 
 5G Core node (`10.91.2.4`): Open5GS, deployed unmodified via
-`docker_open5gs` -- see `UPSTREAM_COMMIT.txt` for the exact upstream commit.
-No source patches; only the YAML configs in `deploy/core/config/` are
-locally authored.
+`docker_open5gs`, pinned as the `vendor/open5gs` submodule -- see
+`UPSTREAM_COMMIT.txt` for the exact commit. No source patches; only the
+YAML configs in `deploy/core/config/` are locally authored.
 
 ## Setup
 
 ```bash
-git clone https://github.com/herlesupreeth/docker_open5gs.git ~/core/docker_open5gs
-cd ~/core/docker_open5gs
-git checkout 6531237
-cp /path/to/sec-xapp/deploy/core/config/*.yaml ~/core/config/
+git submodule update --init vendor/open5gs   # if not already done via --recursive clone
+cp deploy/core/config/*.yaml vendor/open5gs/config/   # or ~/core/config/ on the live node
 ```
 
 Bring the stack up per `docker_open5gs`'s own instructions (its

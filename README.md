@@ -34,7 +34,7 @@ CONTROLLER (laptop, separate repo)
 |---|---|---|---|
 | RAN (gNB) | `10.91.2.1` | srsRAN Project + E2 Agent | `vendor/srsran/` (build), `deploy/ran/` (config, deploy) |
 | RIC | `10.91.2.2` | FlexRIC + security xApp | `vendor/flexric/` (build), `deploy/ric/` (config, deploy) |
-| Core | `10.91.2.4` | Open5GS (via `docker_open5gs`) | `deploy/core/` (config, deploy) |
+| Core | `10.91.2.4` | Open5GS (via `docker_open5gs`) | `vendor/open5gs/` (source), `deploy/core/` (config, deploy) |
 
 Interfaces: E2AP SCTP `:36421` (RAN→RIC), E42 TCP `:36422` (xApp→RIC), N2
 NGAP `:38412` (RAN→AMF), N3 GTP-U `:2152` (RAN→UPF). Full table in
@@ -58,7 +58,7 @@ separate controller repository, not included here.
 | `models/` | Deployed model checkpoints + scalers + thresholds (final versions only — see `docs/MODEL_EVALUATION.md`) |
 | `deploy/ric/`, `deploy/ran/`, `deploy/core/` | Per-node scripts, configs, and deployment READMEs |
 | `observability/` | Monitoring stack: `docker-compose.yml`, Grafana provisioning, Prometheus config, metrics exporter, live testing dashboard |
-| `vendor/flexric/`, `vendor/srsran/` | **Git submodules** — forked FlexRIC and srsRAN Project, each carrying the local patches this project needed on top of upstream (see below) |
+| `vendor/flexric/`, `vendor/srsran/`, `vendor/open5gs/` | **Git submodules** — forked FlexRIC, srsRAN Project, and docker_open5gs, pinned to the exact commit each node runs (see below) |
 | `docs/` | Methodology, results, and architecture documentation |
 | `copy-xapp/` | Snapshot of the C xApp source as built into `vendor/flexric` (for reference without cloning the submodule) |
 
@@ -72,6 +72,12 @@ committed with full history on top of their respective upstreams, in
 publicly forked repos (`5g-oran-testbed-itb/flexric-sec-xapp`,
 `5g-oran-testbed-itb/srsran-sec-xapp`), and pinned here as submodules —
 keeping the vendor code's license and history separate from this repo's own.
+
+Open5GS needed no patches at all — `vendor/open5gs` is a plain GitHub fork
+of `herlesupreeth/docker_open5gs` (`5g-oran-testbed-itb/open5gs-sec-xapp`),
+pinned to the exact commit deployed on the Core node, kept as a submodule
+purely for consistency with the other two nodes and to guarantee the pinned
+commit doesn't disappear if upstream force-pushes or deletes it.
 
 ```bash
 git clone --recursive <this-repo-url>
@@ -229,5 +235,6 @@ submodules carry their upstream licenses independently:
 
 - `vendor/flexric` — fork of [EURECOM Mosaic5G FlexRIC](https://gitlab.eurecom.fr/mosaic5g/flexric), MPL-2.0.
 - `vendor/srsran` — fork of [srsRAN Project](https://github.com/srsran/srsRAN_Project), dual AGPLv3 / commercial (SRS).
+- `vendor/open5gs` — fork of [docker_open5gs](https://github.com/herlesupreeth/docker_open5gs) (herlesupreeth), inherits Open5GS's AGPLv3.
 
 Neither submodule's license is altered or superseded by inclusion here.

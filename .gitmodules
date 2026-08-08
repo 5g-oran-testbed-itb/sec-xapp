@@ -4,3 +4,6 @@
 [submodule "vendor/srsran"]
 	path = vendor/srsran
 	url = https://github.com/5g-oran-testbed-itb/srsran-sec-xapp.git
+[submodule "vendor/open5gs"]
+	path = vendor/open5gs
+	url = https://github.com/5g-oran-testbed-itb/open5gs-sec-xapp.git

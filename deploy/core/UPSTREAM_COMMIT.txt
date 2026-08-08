@@ -1,9 +1,10 @@
-Open5GS is deployed via docker_open5gs, an unmodified checkout of:
+Open5GS is deployed via docker_open5gs, pinned as a git submodule:
 
-  https://github.com/herlesupreeth/docker_open5gs
-  commit 6531237 (Fix for session refresh)
+  vendor/open5gs -> 5g-oran-testbed-itb/open5gs-sec-xapp @ 6531237
+  (fork of https://github.com/herlesupreeth/docker_open5gs)
 
-No source-level patches. Only the YAML files in this directory
+No source-level patches -- the fork mirrors upstream verbatim at the
+pinned commit. Only the YAML files in this directory
 (deploy/core/config/) are locally authored -- copy them into
 ~/core/config/ on the Core node's docker_open5gs checkout to
 reproduce the deployed configuration.
