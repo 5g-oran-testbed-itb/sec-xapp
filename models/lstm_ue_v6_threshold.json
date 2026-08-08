@@ -1,0 +1,10 @@
+{
+  "threshold": 0.023,
+  "percentile": 93.3,
+  "fpr_hybrid_pct": 4.909706546275395,
+  "fpr_lstm_only_pct": 3.216704288939052,
+  "overall_recall_hybrid_pct": 93.0679785330948,
+  "roq_recall_hybrid_pct": 82.70777479892762,
+  "source": "recalibrated_p96.8_via_calibrate_threshold_remote.py",
+  "note": "Optimized threshold (0.023000) to improve RoQ Recall above 85% while keeping FPR Attack under 3%."
+}

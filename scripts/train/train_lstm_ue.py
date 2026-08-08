@@ -51,11 +51,16 @@ def load_csv(path: str, label_filter: int = 0) -> pd.DataFrame:
     return df
 
 
+# Active feature subset for the grouped ablation. Defaults to the full
+# schema, so behaviour is unchanged when --features is not passed.
+ACTIVE_FEATURES = list(FEATURE_NAMES)
+
+
 def df_to_raw(df: pd.DataFrame) -> np.ndarray:
     """Convert DataFrame to feature array, computing burst index features on-the-fly."""
     rows = df.to_dict('records')
     add_burst_features_rows(rows)
-    return np.array([[float(r.get(n, 0.0)) for n in FEATURE_NAMES] for r in rows],
+    return np.array([[float(r.get(n, 0.0)) for n in ACTIVE_FEATURES] for r in rows],
                     dtype=np.float32)
 
 
@@ -178,9 +183,24 @@ def main():
     parser.add_argument("--loss-weights", choices=["schemea", "uniform", "benign"],
                         default="schemea")
     parser.add_argument("--loss-weights-json", type=str, default=None)
+    parser.add_argument("--features", type=str, default=None,
+                        help="Comma-separated feature subset for the grouped "
+                             "ablation. Default: the full 19-feature schema.")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed for reproducible training (default: 42)")
     args = parser.parse_args()
+
+    global ACTIVE_FEATURES
+    if args.features:
+        requested = [f.strip() for f in args.features.split(",") if f.strip()]
+        unknown = [f for f in requested if f not in FEATURE_NAMES]
+        if unknown:
+            print(f"Error: unknown feature(s) {unknown}")
+            sys.exit(1)
+        # Canonical schema order, so scaler columns and model input stay aligned.
+        ACTIVE_FEATURES = [f for f in FEATURE_NAMES if f in set(requested)]
+        print(f"[*] Feature subset: {len(ACTIVE_FEATURES)}/{len(FEATURE_NAMES)} "
+              f"-> {', '.join(ACTIVE_FEATURES)}")
 
     set_reproducible_seed(args.seed)
     os.makedirs('models', exist_ok=True)
@@ -209,7 +229,7 @@ def main():
 
     config = {
         'lstm_model': {
-            'input_features': len(FEATURE_NAMES),
+            'input_features': len(ACTIVE_FEATURES),
             'encoder_hidden': [64, 32],
             'decoder_hidden': [32, 64],
             'latent_dim':     32,
@@ -227,10 +247,10 @@ def main():
     model   = LSTMAutoencoder(config)
     trainer = ModelTrainer(model, config)
     param_count = sum(p.numel() for p in model.parameters())
-    print(f"[*] LSTM-AE params: {param_count:,}  features={len(FEATURE_NAMES)}")
+    print(f"[*] LSTM-AE params: {param_count:,}  features={len(ACTIVE_FEATURES)}")
 
     loss_w = torch.tensor(
-        load_loss_weights(args.loss_weights, FEATURE_NAMES, _FW_DICT, args.loss_weights_json),
+        load_loss_weights(args.loss_weights, ACTIVE_FEATURES, _FW_DICT, args.loss_weights_json),
         dtype=torch.float32)
     print(f"[*] Loss weighting: {args.loss_weights}")
 

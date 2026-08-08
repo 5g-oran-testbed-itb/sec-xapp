@@ -26,7 +26,7 @@ class GRUEncoder(nn.Module):
                            bidirectional=bidirectional)
         self.attention = TemporalAttention(hidden_sizes[1] * D)
         self.fc = nn.Linear(hidden_sizes[1] * D, latent_dim)
-        self.dropout = nn.Dropout(p=0.2)
+        self.dropout = nn.Dropout(p=0.1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out, _ = self.gru1(x)
@@ -51,7 +51,7 @@ class GRUDecoder(nn.Module):
         self.gru2 = nn.GRU(input_size=hidden_sizes[1],
                            hidden_size=output_size,
                            batch_first=True)
-        self.dropout = nn.Dropout(p=0.2)
+        self.dropout = nn.Dropout(p=0.1)
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
         hidden = self.fc(z).unsqueeze(1).repeat(1, self.seq_len, 1)

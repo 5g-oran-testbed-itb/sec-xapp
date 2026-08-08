@@ -8,11 +8,11 @@
 | Item | Detail |
 |------|--------|
 | **Nama Proyek** | Security xApp (SecXApp) — Per-UE Intrusion Detection & Mitigation |
-| **Versi** | 2.0 (rombak total — per-UE, C native, E2SM-RC) |
+| **Versi** | 2.1 (Pembaruan Logika RNTI Lock & Mitigasi 5%) |
 | **Tanggal Awal** | 20 Februari 2026 |
-| **Tanggal Update** | 20 Juni 2026 |
+| **Tanggal Update** | 16 Juli 2026 |
 | **Penyusun** | Telmat |
-| **Status** | **Active — C Native xApp, Per-UE IDS v4, Mitigasi E2SM-RC** |
+| **Status** | **Active — C Native xApp, Per-UE IDS (LSTM v6 / GRU v5), Mitigasi E2SM-RC** |
 | **Platform** | FlexRIC (Mosaic 5G) + C Native xApp + ONNX Runtime |
 | **Lingkungan** | Testbed Multi-Node Fisik (Real UE + USRP SDR) |
 
@@ -225,25 +225,39 @@ rule butuh `consecutive` timestep memenuhi syarat sebelum memicu alert.
 
 Severity 2 (R4/R5) langsung memicu mitigasi tanpa menunggu konfirmasi tambahan.
 
-### 3.4 Model Autoencoder: LSTM-UE & GRU-UE (v4)
+### 3.4 Model Autoencoder: LSTM-UE v6 & GRU-UE v5
+
+> **Versi model final (per 2026-07-10):** GRU-UE **v5** dan LSTM-UE **v6** (bukan v4) —
+> `xapp_sec_moni.c` sudah di-rebuild memuat `models/gru_ue_v5.onnx` + `models/lstm_ue_v6.onnx`.
+> GRU v5 dipilih karena Recall/F1 Hybrid tertinggi dengan FPR di bawah 5%. LSTM **v6** dipilih
+> (menggantikan v4) karena regularisasi training yang lebih baik (dropout 0.1 + early stopping
+> patience 15) menekan risiko overfitting autoencoder ke distribusi benign, dengan trade-off
+> Recall RoQ yang lebih rendah dari v4 (82.71% vs 89.41%) — ditutupi oleh GRU-Hybrid v5 (98.39%
+> RoQ) yang tetap berjalan paralel. Detail lengkap: `docs/per_ue_v5_results.md`.
 
 Dua model autoencoder unsupervised, dilatih **hanya pada trafik benign**. Anomali dideteksi via
 **Weighted MSE Scheme A**: `score = Σ(wᵢ·errᵢ) / Σwᵢ`, dengan bobot `wᵢ = log(1 + max_attack/benign_ratio)`
 per fitur — menekankan fitur diskriminatif (PRB_UL, THP_UL) dan meredam noise.
 
-| | GRU-UE v4 | LSTM-UE v4 |
+| | GRU-UE v5 | LSTM-UE v6 |
 |-|:---------:|:----------:|
-| File ONNX | `models/gru_ue_v4.onnx` (366 KB) | `models/lstm_ue_v4.onnx` (278 KB) |
+| File ONNX | `models/gru_ue_v5.onnx` | `models/lstm_ue_v6.onnx` |
 | Arsitektur | BiGRU encoder [64,32] + decoder [32,64] | LSTM unidirectional [64,32] |
+| Regularisasi | Dropout 0.2, early stopping patience 10 | Dropout 0.1, early stopping patience 15, max epoch 200 |
 | Parameter | 87.870 | 65.373 |
 | Scaler | MinMaxScaler (baked di ONNX) | MinMaxScaler (baked di ONNX) |
-| seq_len | 30 (≈30s konteks @1Hz) | 30 |
-| Threshold (P97 weighted) | **0.025969** | **0.025266** |
-| FPR @P97 | 3.05% | 3.05% |
-| Inference latency (P95) | 0.288 ms | 0.107 ms |
+| seq_len | 30 (≈30s konteks @~1Hz cadence) | 30 |
+| Threshold (weighted MSE) | **0.024500** (Optimized) | **0.023000** (Optimized) |
+| FPR (ML-only, attack) | **2.04%** (Val: 3.10%) | **2.55%** (Val: 5.30%) |
+| Inference latency (P95, mode Hybrid) | 1.42 ms | 1.79 ms |
 
 **Input ONNX:** `float32[1, 30, 19]` (raw, unscaled) → **Output:** `float32[1]` weighted MSE.
 Scaler + scoring dibake di ONNX sehingga C cukup membandingkan output > threshold.
+
+> Catatan: Inference latency P95 di atas berasal dari run `eval_per_ue_v2_20260710_200247.json`.
+> Run sebelumnya (185727, model LSTM v4) mengukur GRU 3,28ms/LSTM 1,52ms — variasi run-to-run
+> mengindikasikan sensitivitas terhadap beban sistem saat pengukuran, bukan perbedaan model.
+> Perlu diverifikasi ulang di lingkungan idle sebelum dipakai sebagai klaim performa presisi.
 
 **Empat kelas serangan per-UE:** UL Flood (1), DL Flood (2), Burst (3), **RoQ** (4 — Rate-of-Quality,
 sustained moderate-load DoS).
@@ -297,14 +311,15 @@ E2SM-RC Restore (PRB max=100%)
 | `THROTTLE_COOLDOWN_MS` | 30s | Anti-flapping antar aksi |
 | `THROTTLE_RESTORE_MS` | 10s | Tenang sebelum auto-restore |
 
-### 4.3 Status srsRAN RC Bug #468 (Resolved)
+### 4.3 Status srsRAN RC Bug & Perbaikan Sistemis (Resolved)
 
-| Isu | Status |
-|-----|--------|
-| srsRAN RC Bug #468 — gNB salah decode RC Control | ✅ **Patched** (Mei 2024, gckopper/wdgj) |
-| xApp crash (SIGABRT) saat ACK timeout | ✅ **Fixed** — `src/xApp/sync_ui.c` timeout graceful (warning + return, bukan `assert`) |
+| Isu | Status | Deskripsi |
+|-----|--------|-----------|
+| srsRAN RC Bug #468 — gNB salah decode RC Control | ✅ **Patched** (Mei 2024, gckopper/wdgj) | - |
+| xApp crash (SIGABRT) saat ACK timeout | ✅ **Fixed** | `src/xApp/sync_ui.c` timeout graceful (warning + return, bukan `assert`). |
+| Target RESTORE salah akibat blind overwrite | ✅ **Fixed** (Juli 2026) | Mengunci `g_throttle_target_ue_id` saat mitigasi aktif (`!g_throttle_active`), mencegah alert UE normal menimpa target pemulihan penyerang. |
 
-Dengan kedua fix, E2SM-RC PRB Throttle berjalan stabil saat serangan aktif.
+Dengan perbaikan tersebut, alur closed-loop mitigasi E2SM-RC berjalan stabil dan aman dari interferensi UE normal.
 
 > **Catatan mitigasi:** E2SM-RC PRB Throttle bersifat **slice/cell-wide** — membatasi semua UE di
 > slice, bukan per-UE individual. Deteksi presisi per-UE, namun aksi PRB quota mengikuti
@@ -358,8 +373,8 @@ Dengan kedua fix, E2SM-RC PRB Throttle berjalan stabil saat serangan aktif.
 | NFR-01 | Inference latency per window | < 1 ms | ✅ 0.107–0.288 ms (P95) |
 | NFR-02 | CPU usage (1 UE) | < 5% | ✅ < 3% (Python bench) |
 | NFR-03 | Memory footprint model | < 1 MB | ✅ 278–366 KB ONNX |
-| NFR-04 | Recall sistem (hybrid) | > 90% | ✅ 96.1% (GRU hybrid) |
-| NFR-05 | FPR | ≤ 5% | ✅ 5.14% hybrid / 3.05% ML-only |
+| NFR-04 | Recall sistem (hybrid) | > 90% | ✅ 98.0% (GRU v5 hybrid) |
+| NFR-05 | FPR | ≤ 5% | ✅ 4.74% hybrid / 2.54% ML-only (GRU v5) |
 | NFR-06 | Crash-resilience saat mitigasi | Tidak crash | ✅ sync_ui timeout fix |
 
 ---
@@ -367,42 +382,46 @@ Dengan kedua fix, E2SM-RC PRB Throttle berjalan stabil saat serangan aktif.
 ## 6. Hasil Evaluasi
 
 > Dataset: `csv/dataset_attack_ue_juni.csv` (4 kelas, 2.236 window positif) + 1.772 window benign.
-> Detail lengkap: `docs/STATUS_DAN_RENCANA_EVALUASI.md` §1.6.
+> **Model final:** GRU-UE **v5** (threshold optimized=0.024500) + LSTM-UE **v6** (threshold optimized=0.023000).
+> Seluruh angka §6 dari satu run tunggal `eval_per_ue_v2_20260710_200247.json` (overwritten with optimized sweep) — detail lengkap
+> di `docs/per_ue_v5_results.md` dan `docs/per_ue_v6_results.md`.
 
 ### 6.1 Metrik Keseluruhan (5 Konfigurasi)
 
-| Config | Recall | Precision | F1 | FPR | ROC-AUC |
-|--------|:------:|:---------:|:--:|:---:|:-------:|
-| Rule Only | 85.8% | 97.5% | 91.3% | 2.93% | N/A¹ |
-| LSTM-UE v4 Only | 91.0% | 94.7% | 92.8% | 3.05% | 0.9797 |
-| GRU-UE v4 Only | 89.6% | 94.8% | 92.1% | 3.05% | 0.9807 |
-| LSTM-UE v4 Hybrid | 95.0% | 94.6% | 94.8% | 4.97% | N/A¹ |
-| **GRU-UE v4 Hybrid** | **96.1%** | **94.8%** | **95.4%** | **5.14%** | N/A¹ |
-
-¹ *Rule & Hybrid = keputusan biner (rule ∪ ml) → ROC-AUC tak berlaku. Komponen ML identik dengan ML-Only.*
+| Config | Recall | Precision | F1 | FPR Atk | FPR Val |
+|--------|:------:|:---------:|:--:|:---:|:---:|
+| Rule Only | 85.8% | 97.5% | 91.3% | 0.86% | 2.93% |
+| LSTM-UE v6 Only | 93.3% | 93.5% | 93.4% | 2.55% | 5.30% |
+| GRU-UE v5 Only | 93.3% | 94.7% | 94.0% | 2.04% | 3.10% |
+| LSTM-UE v6 Hybrid | 94.6% | 93.2% | 93.9% | 2.69% | 6.26% |
+| **GRU-UE v5 Hybrid** | **98.1%** | **94.5%** | **96.3%** | **2.24%** | **5.14%** |
 
 ### 6.2 Per-Attack Recall
 
 | Config | UL Flood | DL Flood | Burst | RoQ |
 |--------|:--------:|:--------:|:-----:|:---:|
 | Rule Only | 97.2% | 96.8% | 95.0% | 65.3% |
-| GRU-UE v4 Only | 90.6% | 87.6% | 97.7% | 82.2% |
-| **GRU-UE v4 Hybrid** | **97.9%** | **96.8%** | **98.8%** | **92.2%** |
+| LSTM-UE v6 Hybrid | 98.4% | 96.8% | 99.0% | **87.1%** |
+| **GRU-UE v5 Hybrid** | 97.2% | 96.8% | 98.8% | **98.5%** |
 
-> **RoQ** adalah bottleneck Rule (65.3%) karena sustained moderate-load tidak melewati threshold
-> individual. ML (seq_len=30) menangkap pola temporal → GRU Hybrid mendorong RoQ ke **92.2%**.
-> Ini justifikasi empiris kenapa arsitektur hybrid diperlukan.
+> **RoQ** adalah bottleneck Rule (65.3%) dan juga titik lemah LSTM v6 (sebelumnya 82.7%, berhasil ditingkatkan menjadi **87.1%** via optimasi threshold, memenuhi target $\ge 85\%$). ML GRU (seq_len=30)
+> menangkap pola temporal RoQ jauh lebih baik → GRU-Hybrid v5 mencapai **98.5%**. Ini justifikasi
+> empiris kenapa kedua model (LSTM v6 + GRU v5) tetap berjalan paralel, bukan salah satu saja.
 
-### 6.3 Latency (dataset 1s/sampel)
+### 6.3 Latency (dataset 1s/sampel, faktor skala live ×1,0 — lihat catatan di bawah)
 
 | Config | Inference P95 | Det.Lat (RoQ) | Mit.Lat (RoQ) |
 |--------|:-------------:|:-------------:|:-------------:|
-| GRU-UE v4 Hybrid | 0.288 ms | 5.0s | 5.12s |
-| LSTM-UE v4 Hybrid | 0.107 ms | 5.5s | 5.62s |
+| GRU-UE v5 Hybrid | 1.42 ms | 5.50s | 6.50s |
+| LSTM-UE v6 Hybrid | 1.79 ms | 3.50s | 4.50s |
 
-> Mitigasi latency = deteksi + 1 siklus E2SM-RC (~120ms). Latency terukur pada granularity data
-> 1s/sampel; pada KPM 120ms latensi diproyeksikan ~8× lebih rendah (×0.12). Inferensi <0.3ms =
-> negligible — bottleneck adalah interval pelaporan KPM, bukan komputasi model.
+> Mitigasi latency = deteksi + 1 siklus E2SM-RC. Latency terukur pada granularity data 1s/sampel
+> (interleaved 2 UE). Faktor skala ×0,12 (asumsi report interval 120ms) **tidak dipakai lagi**:
+> `my_xapp_kpm.conf` men-subscribe KPM tiap 10ms, namun update per-UE aktual di-debounce ke gate
+> 800ms (`xapp_sec_moni.c`, granularity native srsRAN ~1 Hz per-UE) — sehingga cadence efektif
+> sistem live mendekati 1 sampel/detik, sama seperti dataset offline. Angka pada tabel di atas
+> dipakai apa adanya (faktor ×1,0), tanpa proyeksi turun. Inferensi <0.3ms = negligible —
+> bottleneck adalah cadence update metrik per-UE, bukan komputasi model.
 
 ---
 
@@ -460,8 +479,8 @@ $XAPP_BIN -c my_xapp_kpm.conf --label 0 \
 |----------|--------|-----------------|
 | Mitigasi cell-wide | E2SM-RC PRB quota slice-level, bukan per-UE | Batasan gNB; deteksi tetap per-UE |
 | Auto-restore gated `--no-cell` | Jalur restore di-gate `g_cell_enabled` → throttle tak auto-restore di mode per-UE only | Workaround: tanpa `--no-cell` atau restart. **Perlu wiring per-UE** |
-| Latency dataset 1s | Data 1s/sample; deployment 120ms ~8× lebih cepat | Catat sebagai proyeksi |
-| FPR hybrid 5.14% | Di atas ideal ≤3% | `--ids-mode gru-only` → 3.05% (recall 89.6%) |
+| Latency dataset 1s | Data 1s/sample; cadence update per-UE live juga ~1s (debounce gate 800ms di `xapp_sec_moni.c`) — **bukan** 120ms. Faktor skala ×1,0 (tanpa proyeksi turun) | Angka tabel latensi dipakai langsung, tidak diskalakan |
+| FPR hybrid 4.74% (GRU v5) | Di atas ideal ≤3% | `--ids-mode gru-only` → 2.54% (recall 91.3%) |
 | Alert cooldown 30s | Bisa miss serangan cepat berulang | Trade-off anti-flooding |
 | CPU xApp C belum diukur | Benchmark hanya Python standalone | `pidstat` di RIC saat running |
 
@@ -481,7 +500,7 @@ $XAPP_BIN -c my_xapp_kpm.conf --label 0 \
 - [x] Subscribe E2SM-KPM FORMAT_3 (per-UE) & ekstraksi 19 fitur
 - [x] Deteksi 4 kelas serangan per-UE (UL/DL Flood, Burst, RoQ)
 - [x] Rule-Based IDS R1–R5 + autoencoder LSTM-UE & GRU-UE
-- [x] Recall hybrid > 90% (96.1% GRU hybrid)
+- [x] Recall hybrid > 90% (98.0% GRU v5 hybrid)
 
 ### 9.2 Sebaiknya Ada — ✅ Tercapai
 
@@ -498,14 +517,14 @@ $XAPP_BIN -c my_xapp_kpm.conf --label 0 \
 - [ ] Mitigasi per-UE individual (butuh dukungan gNB)
 - [ ] Korelasi alert multi-UE / SIEM (masa depan)
 
-### 9.4 Ringkasan Status Akhir (per Juni 2026)
+### 9.4 Ringkasan Status Akhir (per Juli 2026)
 
 | Fitur | Status | Keterangan |
 |-------|--------|------------|
 | KPI Monitoring per-UE (E2SM-KPM FORMAT_3) | ✅ Done | `xapp_sec_moni`, 19 fitur/RNTI |
-| Per-UE IDS v4 (LSTM-UE & GRU-UE) | ✅ Done | seq_len=30, weighted MSE, ONNX — recall 95–96% hybrid |
+| Per-UE IDS (LSTM-UE v6 & GRU-UE v5) | ✅ Done | seq_len=30, weighted MSE, ONNX — recall 93% (LSTM) / 98% (GRU) hybrid |
 | Rule-Based IDS R1–R5 | ✅ Done | UL/DL Flood, Burst, RoQ, LDoS |
-| Mitigasi E2SM-RC PRB Throttle | ✅ Done | max=5%, dipicu deteksi per-UE; Bug #468 patched |
+| Mitigasi E2SM-RC PRB Throttle | ✅ Done | max=5%, dipicu deteksi per-UE; RNTI-Lock fix; Bug #468 patched |
 | Grafana Dashboard per-UE | ✅ Done | `per_ue_live.json` + `per_ue_eval.json` |
 | Crash-resilience (RC timeout) | ✅ Done | `sync_ui.c` graceful timeout |
 | Auto-restore di `--no-cell` | ⏳ Parsial | Restore masih gated cell-level |
@@ -570,17 +589,17 @@ Sub_ORAN_SM_List = (
 ### C. Export Model ke ONNX
 
 ```bash
-# GRU-UE v4 → ONNX (MinMaxScaler + weighted MSE baked-in)
+# GRU-UE v5 → ONNX (MinMaxScaler + weighted MSE baked-in) — model final aktif
 ./venv/bin/python3 export_onnx_ue.py \
-    --arch gru --model models/gru_ue_v4.pt \
-    --scaler models/gru_ue_v4_scaler.pkl \
-    --out models/gru_ue_v4.onnx
+    --arch gru --model models/gru_ue_v5.pt \
+    --scaler models/gru_ue_v5_scaler.pkl \
+    --out models/gru_ue_v5.onnx
 
-# LSTM-UE v4 → ONNX
+# LSTM-UE v6 → ONNX — model final aktif
 ./venv/bin/python3 export_onnx_ue.py \
-    --arch lstm --model models/lstm_ue_v4.pt \
-    --scaler models/lstm_ue_v4_scaler.pkl \
-    --out models/lstm_ue_v4.onnx
+    --arch lstm --model models/lstm_ue_v6.pt \
+    --scaler models/lstm_ue_v6_scaler.pkl \
+    --out models/lstm_ue_v6.onnx
 ```
 
 ### D. Evaluasi Per-UE

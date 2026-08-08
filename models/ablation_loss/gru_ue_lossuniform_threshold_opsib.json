@@ -1,0 +1,7 @@
+{
+  "threshold": 0.014309,
+  "percentile": 97.01,
+  "source": "opsi_b_validation_calibrated_hybrid_fpr_val<=0.05",
+  "scoring": "benign_calibrated",
+  "note": "Lowest Th keeping Hybrid FPR(Val) <= 5% on csv/dataset_validation_ue_juni.csv. See docs/opsi_b_recalibration_results.md"
+}

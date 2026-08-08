@@ -2,7 +2,7 @@
 # =============================================================
 # O-RAN Security xApp (C Version) — Startup Script WITH E2SM-RC MITIGATION
 # =============================================================
-# Prerequisite: tmux, fuser, SSH key authorized on $RAN_USER@$RAN_IP
+# Prerequisite: tmux, fuser, SSH key authorized on $RAN_USER@$RAN_IP, NOPASSWD sudo on RAN node
 # Usage: ./start_xapp_c_mitigate.sh
 #
 # Mitigasi: E2SM-RC PRB Throttle via Near-RT RIC (O-RAN native)
@@ -27,13 +27,15 @@ SESSION="xapp_c"
 RIC_BIN="/home/telmat/flexric/build/examples/ric/nearRT-RIC"
 XAPP_BIN="/home/telmat/flexric/build/examples/xApp/c/monitor/xapp_sec_moni"
 MITIGATE_BIN="/home/telmat/flexric/build/examples/xApp/c/monitor/xapp_sec_mitigate"
-XAPP_CONF="/home/telmat/sec-xapp/deploy/ric/my_xapp_kpm.conf"
+XAPP_CONF="/home/telmat/sec-xapp/my_xapp_kpm.conf"
+MITIGATE_CONF="/home/telmat/sec-xapp/my_xapp_mitigate.conf"
 XAPP_DIR="/home/telmat/sec-xapp"
 
 RAN_IP="${RAN_IP:-10.91.2.1}"
 RAN_USER="${RAN_USER:-telmat}"
-# Requires an SSH key already authorized on $RAN_USER@$RAN_IP (ssh-copy-id).
-# No password is read from this script or the environment.
+# Requires an SSH key already authorized on $RAN_USER@$RAN_IP (ssh-copy-id)
+# and passwordless sudo (NOPASSWD) on the RAN node. No password is read
+# from this script or the environment.
 RAN_GNB_DIR="/home/telmat/TA-Rizqi-Nabiel/O-RAN-Testbed-Automation/Next_Generation_Node_B"
 RAN_GNB_BIN="./srsRAN_Project/build/apps/gnb/gnb"
 RAN_GNB_CONF="configs/cots_n78_copied.yml"
@@ -48,10 +50,10 @@ IDS_MODE_FILE="/tmp/xapp_ids_mode"
 cleanup() {
     echo "[cleanup] Killing gNB on RAN node ($RAN_IP)..."
     ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
-        "$RAN_USER@$RAN_IP" "sudo pkill -9 gnb 2>/dev/null" 2>/dev/null || true
+        "$RAN_USER@$RAN_IP" "sudo -n pkill -9 gnb 2>/dev/null; sudo -n killall -9 gnb 2>/dev/null" 2>/dev/null || true
     echo "[cleanup] Done."
 }
-trap cleanup EXIT
+trap cleanup INT TERM
 
 # =============================================================
 # Dependency check
@@ -76,6 +78,12 @@ rm -f "$PHASE2_FLAG" "$MODE_FILE" "$IDS_MODE_FILE"
 sleep 1
 
 echo "=============================================="
+echo "Resetting subscriber profile to SST=1..."
+echo "=============================================="
+bash /home/telmat/sec-xapp/change_subscriber_slice.sh 001013310000103 1
+
+
+echo "=============================================="
 echo "  O-RAN Security xApp (C) + E2SM-RC MITIGATE"
 echo "  Mitigasi: E2SM-RC PRB Throttle (O-RAN native)"
 echo "  RC Bug #468: RESOLVED — --mitigate aktif"
@@ -97,11 +105,12 @@ tmux send-keys -t "$SESSION:0.0" \
     "echo '=== [Pane 0] Near-RT RIC ===' && sleep 1 && '$RIC_BIN'" Enter
 
 # Pane 1: srsGNB via SSH (Kanan Atas)
+# sleep 10: beri waktu RIC selesai init + bind port 36421 sebelum gNB konek
 tmux send-keys -t "$SESSION:0.1" \
-    "echo '=== [Pane 1] srsGNB via SSH ===' && sleep 3 && \
+    "echo '=== [Pane 1] srsGNB via SSH ===' && sleep 10 && \
      ssh '$RAN_USER@$RAN_IP' \
-     'cd $RAN_GNB_DIR && sudo pkill -9 gnb 2>/dev/null; sleep 1; \
-      sudo stdbuf -oL $RAN_GNB_BIN -c $RAN_GNB_CONF 2>&1 | tee /tmp/gnb.log'" Enter
+     'cd $RAN_GNB_DIR && sudo -n pkill -9 gnb 2>/dev/null; sudo -n killall -9 gnb 2>/dev/null; sleep 1; \
+      sudo -n stdbuf -oL $RAN_GNB_BIN -c $RAN_GNB_CONF 2>&1 | tee /tmp/gnb.log'" Enter
 
 # Pane 2: Prompt — pilih mode + ids-mode + tunggu UE attach (Kiri Bawah)
 tmux send-keys -t "$SESSION:0.2" \
@@ -162,7 +171,7 @@ tmux send-keys -t "$SESSION:0.3" \
      _det_mode=\$(cat '$MODE_FILE' 2>/dev/null || echo hybrid) && \
      _ids_mode=\$(cat '$IDS_MODE_FILE' 2>/dev/null || echo gru-hybrid) && \
      echo \"=== Memulai xapp_sec_moni | mode: \$_det_mode | ids-mode: \$_ids_mode | --mitigate ===\" && \
-     '$XAPP_BIN' -c '$XAPP_CONF' --label 0 --mode \"\$_det_mode\" --ids-mode \"\$_ids_mode\" --mitigate --no-cell --no-csv" Enter
+     '$XAPP_BIN' -c '$XAPP_CONF' --label 0 --mode \"\$_det_mode\" --ids-mode \"\$_ids_mode\" --mitigate" Enter
 
 # Fokus ke Pane 2 (prompt) saat attach
 tmux select-pane -t "$SESSION:0.2"
@@ -199,7 +208,7 @@ tmux send-keys -t "$SESSION:2" \
      echo '  Menunggu Near-RT RIC siap (Window 0 Pane 0)...' && \
      sleep 5 && \
      '$MITIGATE_BIN' \
-       -c '$XAPP_CONF' --ue_f1ap 1 --mcc 001 --mnc 01 --sst 1" Enter
+       -c '$MITIGATE_CONF' --ue_f1ap 1 --mcc 001 --mnc 01 --sst 1" Enter
 
 # Kembali ke Window 0 saat attach
 tmux select-window -t "$SESSION:0"

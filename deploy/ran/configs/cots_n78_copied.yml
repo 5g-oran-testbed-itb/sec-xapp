@@ -10,6 +10,7 @@ cu_cp:
       - plmn: '00101'
         tai_slice_support_list:
         - sst: 1
+        - sst: 2
 ru_sdr:
   device_driver: uhd
   device_args: type=b200
@@ -25,6 +26,19 @@ cell_cfg:
   plmn: '00101'
   tac: 7
   pci: 1
+  # Slice-based scheduler so E2SM-RC Style2/Action6 (RRM Policy Ratio) has a slice to
+  # bind to. Must match the control's PLMN (00101) + S-NSSAI (sst=1). Without this the
+  # gNB ACKs the RC control but never enforces a PRB quota (brate stays full).
+  # Defaults below = unthrottled; the xApp updates max_prb_policy_ratio at runtime.
+  slicing:
+    - sst: 1
+      sched_cfg:
+        min_prb_policy_ratio: 0
+        max_prb_policy_ratio: 100
+    - sst: 2
+      sched_cfg:
+        min_prb_policy_ratio: 0
+        max_prb_policy_ratio: 5
   pusch:
     min_k2: 2
   tdd_ul_dl_cfg:
@@ -50,7 +64,7 @@ e2:
   port: 36421
   bind_addr: 10.91.2.1
   e2sm_kpm_enabled: true
-  e2sm_rc_enabled: false
+  e2sm_rc_enabled: true
 log:
   filename: /home/telmat/TA-Rizqi-Nabiel/O-RAN-Testbed-Automation/Next_Generation_Node_B/logs/gnb_cots_n78.log
   all_level: info

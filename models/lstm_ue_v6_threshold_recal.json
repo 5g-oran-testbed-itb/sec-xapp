@@ -1,0 +1,10 @@
+{
+  "mode": "Hybrid",
+  "percentile": 96.8,
+  "threshold": 0.0270472951233387,
+  "fpr_lstm_pct": 3.216704288939052,
+  "fpr_hybrid_pct": 4.909706546275395,
+  "overall_recall_pct": 93.0679785330948,
+  "roq_recall_pct": 82.70777479892762,
+  "source": "recalibrated_p96.8_for_best_roq_under_5pct_fpr"
+}

@@ -33,8 +33,10 @@ SEQ_LEN = 30
 _WEIGHT_VEC = torch.tensor(
     [FEATURE_WEIGHTS.get(n, 1.0) for n in FEATURE_NAMES], dtype=torch.float32
 )
-# xApp KPM cycle period — mitigation is triggered on the next cycle after detection.
-_XAPP_CYCLE_S = 0.12
+# xApp per-UE metric update cadence — mitigation is triggered on the next cycle after
+# detection. Effective cadence is ~1 Hz (debounce gate 800ms in xapp_sec_moni.c), not
+# the 120ms KPM subscribe interval (which is raw wire cadence, not per-UE refresh rate).
+_XAPP_CYCLE_S = 1.0
 LABEL_NAMES = {1: "ul_flood", 2: "dl_flood", 3: "burst", 4: "roq"}
 
 GRU_CFG = {
@@ -120,14 +122,31 @@ def build_windows(X: np.ndarray, seq_len: int = SEQ_LEN) -> np.ndarray:
 
 
 def count_mixed_windows(labels: np.ndarray, seq_len: int = SEQ_LEN) -> int:
-    """Count windows where 0 < fraction_attack < 1."""
+    """Count windows spanning more than one label value.
+
+    Must be called per-RNTI, exactly like the windows the evaluation scores.
+    Counting on a globally concatenated label array inflates the result badly:
+    the UEs are interleaved in time, so a global window mixes labels across UEs
+    that never share a window in the real pipeline.
+    """
     N = len(labels)
     mixed = 0
     for i in range(N - seq_len + 1):
-        attack_ratio = float(np.mean(labels[i:i + seq_len] != 0))
-        if 0 < attack_ratio < 1:
+        if len(np.unique(labels[i:i + seq_len])) > 1:
             mixed += 1
     return mixed
+
+
+def count_mixed_windows_by_rnti(by_rnti: dict, seq_len: int = SEQ_LEN) -> tuple[int, int]:
+    """(mixed, total) window counts using the same per-RNTI windowing as scoring."""
+    mixed = total = 0
+    for _rnti, rows in sorted(by_rnti.items()):
+        if len(rows) < seq_len:
+            continue
+        labels = get_labels(rows)
+        total += len(labels) - seq_len + 1
+        mixed += count_mixed_windows(labels, seq_len)
+    return mixed, total
 
 
 # ── Section 2: Rule engine ────────────────────────────────────────────────────
@@ -203,11 +222,12 @@ def load_models(
 
 
 def score_ml(
-    model, scaler, X_raw: np.ndarray, batch: int = 256
+    model, scaler, X_raw: np.ndarray, batch: int = 256, weight_vec=None
 ) -> tuple[np.ndarray, list[float]]:
     """
-    Score all windows from X_raw using weighted MSE (Scheme A weights).
+    Score all windows from X_raw using weighted MSE.
     X_raw: (N, num_features) unscaled features.
+    weight_vec: (num_features,) torch tensor; defaults to Scheme A weights.
     Returns:
       score (N-seq_len+1,) float32 — weighted MSE per window
       latency_ms (list of float) — per-window inference time in milliseconds
@@ -220,7 +240,7 @@ def score_ml(
     score_parts: list[np.ndarray] = []
     latencies: list[float] = []
     model.eval()
-    w = _WEIGHT_VEC  # (num_features,)
+    w = _WEIGHT_VEC if weight_vec is None else weight_vec  # (num_features,)
 
     for i in range(0, len(wins), batch):
         chunk = torch.tensor(wins[i:i + batch])
@@ -235,6 +255,42 @@ def score_ml(
         latencies.extend([(t1 - t0) * 1000.0 / n] * n)
 
     return np.concatenate(score_parts).astype(np.float32), latencies
+
+
+def derive_weight_vectors(models: dict, val_by_rnti: dict, scoring: str) -> dict:
+    """Per-model scoring weight vector for the chosen scheme.
+
+    "attack" keeps the Scheme A weights (attack-informed, the historical default).
+    "uniform" is plain MSE. "benign" derives weights from benign validation
+    residuals only, matching evaluate_scoring_comparison.py — no attack labels.
+    """
+    if scoring == "attack":
+        return {"lstm": _WEIGHT_VEC, "gru": _WEIGHT_VEC}
+    if scoring == "uniform":
+        ones = torch.ones(NUM_FEATURES, dtype=torch.float32)
+        return {"lstm": ones, "gru": ones}
+
+    from src.detection.scoring import (
+        make_weight_vec, per_feature_residuals_from_windows,
+    )
+    vecs = {}
+    for key in ("lstm", "gru"):
+        model, scaler, _ = models[key]
+        parts = []
+        for _rnti, rows in sorted(val_by_rnti.items()):
+            if len(rows) < SEQ_LEN:
+                continue
+            add_burst_features_rows(rows)
+            X_scaled = scaler.transform(extract_features(rows)).astype(np.float32)
+            wins = build_windows(X_scaled, SEQ_LEN)
+            if len(wins) > 0:
+                parts.append(per_feature_residuals_from_windows(model, wins))
+        if not parts:
+            raise ValueError("benign scoring needs at least one usable validation RNTI")
+        w = make_weight_vec("benign", FEATURE_NAMES, FEATURE_WEIGHTS,
+                            benign_residuals=np.concatenate(parts))
+        vecs[key] = torch.tensor(w, dtype=torch.float32)
+    return vecs
 
 
 # ── Section 4: Metrics ────────────────────────────────────────────────────────
@@ -316,7 +372,11 @@ def compute_detection_latency(
 ) -> dict[str, dict]:
     """
     Per-class detection latency. Segments with no alert are excluded (FN).
-    Returns {class_name: {mean_s, median_s, n_segments}}.
+    Returns {class_name: {mean_s, median_s, min_s, max_s, n_segments}}.
+
+    n_segments is only 2-3 per class in the June dataset, so the dispersion
+    fields are reported alongside the mean: a mean over 3 samples must not be
+    quoted to two decimals as if it were a precise estimate.
     """
     segments = find_attack_segments(labels, timestamps_ms, rntis)
     lats: dict[str, list[float]] = defaultdict(list)
@@ -339,10 +399,13 @@ def compute_detection_latency(
             result[name] = {
                 "mean_s":     round(float(np.mean(vals)), 3),
                 "median_s":   round(float(np.median(vals)), 3),
+                "min_s":      round(float(np.min(vals)), 3),
+                "max_s":      round(float(np.max(vals)), 3),
                 "n_segments": len(vals),
             }
         else:
-            result[name] = {"mean_s": None, "median_s": None, "n_segments": 0}
+            result[name] = {"mean_s": None, "median_s": None, "min_s": None,
+                            "max_s": None, "n_segments": 0}
     return result
 
 
@@ -351,15 +414,21 @@ def compute_mitigation_latency(det_latency: dict) -> dict:
     Mitigation latency = detection latency + one xApp KPM cycle (_XAPP_CYCLE_S).
     After detection fires, the xApp triggers E2SM-RC PRB throttle on the next cycle.
     Inherits n_segments from detection latency (same segments, same FN exclusion).
+
+    This is a derived quantity, not an independent measurement: every field is
+    exactly detection latency + 1.0 s by construction.
     """
     result = {}
     for cls, v in det_latency.items():
         if v["mean_s"] is None:
-            result[cls] = {"mean_s": None, "median_s": None, "n_segments": 0}
+            result[cls] = {"mean_s": None, "median_s": None, "min_s": None,
+                           "max_s": None, "n_segments": 0}
         else:
             result[cls] = {
                 "mean_s":     round(v["mean_s"]   + _XAPP_CYCLE_S, 3),
                 "median_s":   round(v["median_s"] + _XAPP_CYCLE_S, 3),
+                "min_s":      round(v["min_s"]    + _XAPP_CYCLE_S, 3),
+                "max_s":      round(v["max_s"]    + _XAPP_CYCLE_S, 3),
                 "n_segments": v["n_segments"],
             }
     return result
@@ -472,6 +541,15 @@ def _ensure_matplotlib():
     return plt
 
 
+def _savefig(plt, path: str) -> None:
+    """Save a PNG plus a vector PDF beside it, for print-bound figures."""
+    plt.savefig(path, dpi=150, bbox_inches="tight")
+    print(f"[FIG] {path}")
+    pdf_path = os.path.splitext(path)[0] + ".pdf"
+    plt.savefig(pdf_path, bbox_inches="tight")
+    print(f"[FIG] {pdf_path}")
+
+
 def plot_confusion_matrices(results: dict, output_dir: str) -> None:
     plt = _ensure_matplotlib()
     for model_type in ["lstm", "gru"]:
@@ -516,17 +594,17 @@ def plot_confusion_matrices(results: dict, output_dir: str) -> None:
 
         plt.tight_layout()
         path = os.path.join(output_dir, f"eval_confusion_{model_type}.png")
-        plt.savefig(path, dpi=150, bbox_inches="tight")
+        _savefig(plt, path)
         plt.close()
-        print(f"[FIG] {path}")
 
 
-def plot_per_class(results: dict, output_dir: str) -> None:
+def plot_per_class(results: dict, output_dir: str, lstm_ver: str = "v4", gru_ver: str = "v4") -> None:
     plt = _ensure_matplotlib()
     classes = ["ul_flood", "dl_flood", "burst", "roq"]
     labels  = ["UL Flood", "DL Flood", "Burst", "RoQ"]
 
     for model_type in ["lstm", "gru"]:
+        ver = lstm_ver if model_type == "lstm" else gru_ver
         configs = ["rule_only", f"{model_type}_only", f"{model_type}_hybrid"]
         x = np.arange(len(configs))
         width = 0.18
@@ -543,7 +621,7 @@ def plot_per_class(results: dict, output_dir: str) -> None:
         ax.set_xticks(x + width * 1.5)
         ax.set_xticklabels([c.upper().replace("_", " ") for c in configs], rotation=0, ha="center")
         ax.set_ylabel("Recall (%)", fontsize=11)
-        ax.set_title(f"Per-Class Recall by Configuration ({model_type.upper()}-UE v4)", fontsize=12, fontweight="bold")
+        ax.set_title(f"Per-Class Recall by Configuration ({ver})", fontsize=12, fontweight="bold")
         ax.legend(loc="lower left")
         ax.set_ylim(0, 115)
         ax.axhline(100, color="gray", linestyle="--", linewidth=0.8)
@@ -551,9 +629,8 @@ def plot_per_class(results: dict, output_dir: str) -> None:
 
         plt.tight_layout()
         path = os.path.join(output_dir, f"eval_per_class_{model_type}.png")
-        plt.savefig(path, dpi=150, bbox_inches="tight")
+        _savefig(plt, path)
         plt.close()
-        print(f"[FIG] {path}")
 
 
 def plot_latency(results: dict, output_dir: str) -> None:
@@ -610,19 +687,19 @@ def plot_latency(results: dict, output_dir: str) -> None:
 
         plt.tight_layout()
         path = os.path.join(output_dir, f"eval_latency_{model_type}.png")
-        plt.savefig(path, dpi=150, bbox_inches="tight")
+        _savefig(plt, path)
         plt.close()
-        print(f"[FIG] {path}")
 
 
-def plot_roc(roc_data: dict, results: dict, output_dir: str) -> None:
+def plot_roc(roc_data: dict, results: dict, output_dir: str, lstm_ver: str = "v4", gru_ver: str = "v4") -> None:
     plt = _ensure_matplotlib()
     colors = {"lstm": "steelblue", "gru": "darkorange"}
     for model_type in ["lstm", "gru"]:
+        ver = lstm_ver if model_type == "lstm" else gru_ver
         fig, ax = plt.subplots(figsize=(7, 6))
 
         fpr, tpr, auc_v = roc_data[model_type]
-        label = f"{model_type.upper()}-UE v4 (AUC={auc_v:.3f})"
+        label = f"{ver} (AUC={auc_v:.3f})"
         ax.plot(fpr, tpr, color=colors.get(model_type, "gray"), lw=2.2, label=label)
 
         rule = results.get("rule_only", {})
@@ -637,16 +714,15 @@ def plot_roc(roc_data: dict, results: dict, output_dir: str) -> None:
         ax.plot([0, 1], [0, 1], "k--", lw=0.8, label="Random")
         ax.set_xlabel("False Positive Rate", fontsize=11)
         ax.set_ylabel("True Positive Rate (Recall)", fontsize=11)
-        ax.set_title(f"ROC Curve — {model_type.upper()}-UE v4", fontsize=12, fontweight="bold")
+        ax.set_title(f"ROC Curve — {ver}", fontsize=12, fontweight="bold")
         ax.legend(loc="lower right")
         ax.set_xlim([-0.02, 1.02]); ax.set_ylim([-0.02, 1.02])
         ax.grid(True, alpha=0.3)
 
         plt.tight_layout()
         path = os.path.join(output_dir, f"eval_roc_{model_type}.png")
-        plt.savefig(path, dpi=150, bbox_inches="tight")
+        _savefig(plt, path)
         plt.close()
-        print(f"[FIG] {path}")
 
 
 def plot_reconstruction_error_dist(
@@ -659,6 +735,8 @@ def plot_reconstruction_error_dist(
     output_dir: str,
     train_lstm_mse: np.ndarray = None,
     train_gru_mse: np.ndarray = None,
+    lstm_ver: str = "v4",
+    gru_ver: str = "v4",
 ) -> None:
     plt = _ensure_matplotlib()
     bins = 100
@@ -678,16 +756,15 @@ def plot_reconstruction_error_dist(
     ax1.axvspan(0, thresh_lstm, alpha=0.05, color='#4CAF50')
     ax1.set_xlabel('Weighted Reconstruction Error (MSE)', fontsize=10.5)
     ax1.set_ylabel('Density', fontsize=10.5)
-    ax1.set_title('LSTM-UE v4 Reconstruction Error Distribution', fontsize=12, fontweight='bold')
+    ax1.set_title(f'{lstm_ver} Reconstruction Error Distribution', fontsize=12, fontweight='bold')
     ax1.legend(fontsize=9, loc='upper right')
     ax1.grid(True, alpha=0.3)
     ax1.set_xlim(0, xlim_lstm)
 
     plt.tight_layout()
     path_lstm = os.path.join(output_dir, "eval_reconstruction_error_lstm.png")
-    plt.savefig(path_lstm, dpi=150, bbox_inches="tight")
+    _savefig(plt, path_lstm)
     plt.close()
-    print(f"[FIG] {path_lstm}")
 
     # 2. GRU Plot
     fig, ax2 = plt.subplots(figsize=(8, 5.5))
@@ -704,26 +781,29 @@ def plot_reconstruction_error_dist(
     ax2.axvspan(0, thresh_gru, alpha=0.05, color='#2196F3')
     ax2.set_xlabel('Weighted Reconstruction Error (MSE)', fontsize=10.5)
     ax2.set_ylabel('Density', fontsize=10.5)
-    ax2.set_title('GRU-UE v4 Reconstruction Error Distribution', fontsize=12, fontweight='bold')
+    ax2.set_title(f'{gru_ver} Reconstruction Error Distribution', fontsize=12, fontweight='bold')
     ax2.legend(fontsize=9, loc='upper right')
     ax2.grid(True, alpha=0.3)
     ax2.set_xlim(0, xlim_gru)
 
     plt.tight_layout()
     path_gru = os.path.join(output_dir, "eval_reconstruction_error_gru.png")
-    plt.savefig(path_gru, dpi=150, bbox_inches="tight")
+    _savefig(plt, path_gru)
     plt.close()
-    print(f"[FIG] {path_gru}")
 
 
 # ── Section 7: CLI + main ─────────────────────────────────────────────────────
 
-def _pool_per_rnti(by_rnti: dict, models: dict, thresh_lstm: float, thresh_gru: float):
+def _pool_per_rnti(by_rnti: dict, models: dict, thresh_lstm: float, thresh_gru: float,
+                   weight_vecs: dict = None):
     """
     Process each RNTI independently. Returns arrays pooled across all RNTIs.
     """
     lstm_model, lstm_scaler, _ = models["lstm"]
     gru_model,  gru_scaler,  _ = models["gru"]
+    weight_vecs = weight_vecs or {}
+    w_lstm = weight_vecs.get("lstm")
+    w_gru  = weight_vecs.get("gru")
 
     all_rule   = []
     all_lstm   = []
@@ -749,8 +829,8 @@ def _pool_per_rnti(by_rnti: dict, models: dict, thresh_lstm: float, thresh_gru: 
 
         rule_full = run_rule_engine(X)
 
-        lstm_mse, llats = score_ml(lstm_model, lstm_scaler, X)
-        gru_mse,  glats = score_ml(gru_model,  gru_scaler,  X)
+        lstm_mse, llats = score_ml(lstm_model, lstm_scaler, X, weight_vec=w_lstm)
+        gru_mse,  glats = score_ml(gru_model,  gru_scaler,  X, weight_vec=w_gru)
 
         # Align everything to timestep indices t >= SEQ_LEN-1
         aligned_rule  = rule_full[SEQ_LEN - 1:]
@@ -807,7 +887,19 @@ def main():
     ap.add_argument("--gru-model", default="models/gru_ue_v4.pt")
     ap.add_argument("--gru-scaler", default="models/gru_ue_v4_scaler.pkl")
     ap.add_argument("--gru-threshold", default="models/gru_ue_v4_threshold.json")
-    
+
+    # Scoring / threshold overrides (defaults reproduce the historical behaviour)
+    ap.add_argument("--scoring", choices=["attack", "benign", "uniform"], default="attack",
+                    help="Anomaly-score weighting: attack=Scheme A (default), "
+                         "benign=leakage-free benign-calibrated, uniform=plain MSE")
+    ap.add_argument("--calibrate-hybrid-fpr", type=float, default=None,
+                    help="Recalibrate both thresholds so Hybrid FPR on the attack "
+                         "file's benign windows stays under this value (e.g. 0.03), "
+                         "ignoring the threshold JSONs")
+    ap.add_argument("--lstm-label", default=None,
+                    help="Version label used in figure titles (default: parsed from filename)")
+    ap.add_argument("--gru-label", default=None)
+
     args = ap.parse_args()
 
     os.makedirs(args.output, exist_ok=True)
@@ -824,6 +916,19 @@ def main():
     # Thresholds from training JSON are calibrated on uniform MSE; we recompute
     # P97 on weighted validation scores below after the validation loop.
 
+    # ── Scoring weights ───────────────────────────────────────────────────────
+    # Benign weights come from validation residuals, so the val CSV is loaded
+    # before anything is scored.
+    print(f"\n[*] Loading validation dataset: {args.val}")
+    val_rows = load_csv(args.val)
+    preprocess_rows(val_rows)
+    val_by_rnti = split_by_rnti(val_rows)
+
+    weight_vecs = derive_weight_vectors(models, val_by_rnti, args.scoring)
+    w_lstm = weight_vecs["lstm"]
+    w_gru  = weight_vecs["gru"]
+    print(f"[*] Scoring scheme: {args.scoring}")
+
     # ── Optional training dataset ─────────────────────────────────────────────
     train_lstm_mse = None
     train_gru_mse = None
@@ -839,8 +944,8 @@ def main():
                 continue
             add_burst_features_rows(rows)
             X = extract_features(rows)
-            lstm_mse, _ = score_ml(models["lstm"][0], models["lstm"][1], X)
-            gru_mse,  _ = score_ml(models["gru"][0],  models["gru"][1],  X)
+            lstm_mse, _ = score_ml(models["lstm"][0], models["lstm"][1], X, weight_vec=w_lstm)
+            gru_mse,  _ = score_ml(models["gru"][0],  models["gru"][1],  X, weight_vec=w_gru)
             train_lstm_mse_all.append(lstm_mse)
             train_gru_mse_all.append(gru_mse)
         train_lstm_mse = np.concatenate(train_lstm_mse_all) if train_lstm_mse_all else np.array([], dtype=np.float32)
@@ -848,9 +953,6 @@ def main():
 
     # ── Validation dataset (FPR only) ─────────────────────────────────────────
     print(f"\n[1/4] Validation dataset: {args.val}")
-    val_rows = load_csv(args.val)
-    preprocess_rows(val_rows)
-    val_by_rnti = split_by_rnti(val_rows)
 
     val_rule_fires_all = []
     val_lstm_mse_all   = []
@@ -862,8 +964,8 @@ def main():
         add_burst_features_rows(rows)
         X = extract_features(rows)
         rule_f = run_rule_engine(X)[SEQ_LEN - 1:]
-        lstm_mse, _ = score_ml(models["lstm"][0], models["lstm"][1], X)
-        gru_mse,  _ = score_ml(models["gru"][0],  models["gru"][1],  X)
+        lstm_mse, _ = score_ml(models["lstm"][0], models["lstm"][1], X, weight_vec=w_lstm)
+        gru_mse,  _ = score_ml(models["gru"][0],  models["gru"][1],  X, weight_vec=w_gru)
         val_rule_fires_all.append(rule_f)
         val_lstm_mse_all.append(lstm_mse)
         val_gru_mse_all.append(gru_mse)
@@ -872,44 +974,65 @@ def main():
     val_lstm_mse   = np.concatenate(val_lstm_mse_all)   if val_lstm_mse_all   else np.array([], dtype=np.float32)
     val_gru_mse    = np.concatenate(val_gru_mse_all)    if val_gru_mse_all    else np.array([], dtype=np.float32)
 
-    # Recalibrate thresholds on weighted validation scores (P97)
-    thresh_lstm = float(np.percentile(val_lstm_mse, 97)) if len(val_lstm_mse) > 0 else 0.0
-    thresh_gru  = float(np.percentile(val_gru_mse,  97)) if len(val_gru_mse)  > 0 else 0.0
-    print(f"    Weighted P97 thresholds — lstm:{thresh_lstm:.6f}  gru:{thresh_gru:.6f}")
+    # Use thresholds loaded from --lstm-threshold / --gru-threshold JSON files
+    # (previously this recalibrated to a hardcoded P97 on validation scores,
+    # silently ignoring whatever threshold JSON was passed in).
+    thresh_lstm = models["lstm"][2]
+    thresh_gru  = models["gru"][2]
+    pctl_lstm = float((val_lstm_mse <= thresh_lstm).mean() * 100) if len(val_lstm_mse) > 0 else 0.0
+    pctl_gru  = float((val_gru_mse  <= thresh_gru).mean()  * 100) if len(val_gru_mse)  > 0 else 0.0
+    print(f"    Loaded thresholds — lstm:{thresh_lstm:.6f} (P{pctl_lstm:.1f} on val)  "
+          f"gru:{thresh_gru:.6f} (P{pctl_gru:.1f} on val)")
 
     n_val = len(val_rule_fires)
-    fpr_rule_val = compute_fpr_val(val_rule_fires, n_val)
-    fpr_lstm_val = compute_fpr_val(val_lstm_mse > thresh_lstm, n_val)
-    fpr_gru_val  = compute_fpr_val(val_gru_mse  > thresh_gru,  n_val)
-    fpr_lstm_hyb = compute_fpr_val(val_rule_fires | (val_lstm_mse > thresh_lstm), n_val)
-    fpr_gru_hyb  = compute_fpr_val(val_rule_fires | (val_gru_mse  > thresh_gru),  n_val)
-
     print(f"    Validation windows: {n_val}")
-    print(f"    FPR — rule:{fpr_rule_val*100:.2f}%  lstm:{fpr_lstm_val*100:.2f}%  gru:{fpr_gru_val*100:.2f}%")
 
     # ── Attack dataset ─────────────────────────────────────────────────────────
     print(f"\n[2/4] Attack dataset: {args.attack}")
     atk_rows = load_csv(args.attack)
     preprocess_rows(atk_rows)
 
-    all_atk_labels_raw = get_labels(atk_rows)
-    mixed_count = count_mixed_windows(all_atk_labels_raw)
-    mixed_pct   = round(mixed_count / max(1, len(all_atk_labels_raw) - SEQ_LEN + 1) * 100, 2)
-    print(f"    Mixed windows: {mixed_count} ({mixed_pct}%)")
-
     atk_by_rnti = split_by_rnti(atk_rows)
-    p = _pool_per_rnti(atk_by_rnti, models, thresh_lstm, thresh_gru)
+
+    # Per-RNTI, matching the windows actually scored. A global count over the
+    # concatenated label array reports 60.12% because interleaved UEs mix labels
+    # in windows that never exist in the pipeline.
+    mixed_count, mixed_total = count_mixed_windows_by_rnti(atk_by_rnti)
+    mixed_pct = round(mixed_count / max(1, mixed_total) * 100, 2)
+    print(f"    Mixed windows (per-RNTI): {mixed_count}/{mixed_total} ({mixed_pct}%)")
+
+    p = _pool_per_rnti(atk_by_rnti, models, thresh_lstm, thresh_gru, weight_vecs)
 
     lbls    = p["labels"]
     ts      = p["timestamps"]
     rntis   = p["rntis"]
     rf      = p["rule_fires"]
-    lf      = p["lstm_fires"]
-    gf      = p["gru_fires"]
-    lhf     = rf | lf
-    ghf     = rf | gf
     lmse    = p["lstm_mse"]
     gmse    = p["gru_mse"]
+
+    # Optional FPR-targeted recalibration. Uses only label==0 windows of the
+    # attack file, so no attack-class label enters the threshold choice.
+    threshold_source = "threshold_json"
+    if args.calibrate_hybrid_fpr is not None:
+        from evaluate_scoring_comparison import calibrate_hybrid_threshold
+        neg = lbls == 0
+        thresh_lstm = calibrate_hybrid_threshold(lmse[neg], rf[neg], args.calibrate_hybrid_fpr)
+        thresh_gru  = calibrate_hybrid_threshold(gmse[neg], rf[neg], args.calibrate_hybrid_fpr)
+        threshold_source = f"hybrid_fpr_attack<={args.calibrate_hybrid_fpr}"
+        print(f"    Recalibrated thresholds — lstm:{thresh_lstm:.6f}  gru:{thresh_gru:.6f}")
+
+    lf  = lmse > thresh_lstm
+    gf  = gmse > thresh_gru
+    lhf = rf | lf
+    ghf = rf | gf
+
+    fpr_rule_val = compute_fpr_val(val_rule_fires, n_val)
+    fpr_lstm_val = compute_fpr_val(val_lstm_mse > thresh_lstm, n_val)
+    fpr_gru_val  = compute_fpr_val(val_gru_mse  > thresh_gru,  n_val)
+    fpr_lstm_hyb = compute_fpr_val(val_rule_fires | (val_lstm_mse > thresh_lstm), n_val)
+    fpr_gru_hyb  = compute_fpr_val(val_rule_fires | (val_gru_mse  > thresh_gru),  n_val)
+    print(f"    FPR(Val) — rule:{fpr_rule_val*100:.2f}%  "
+          f"lstm:{fpr_lstm_val*100:.2f}%  gru:{fpr_gru_val*100:.2f}%")
 
     pos_mask = lbls > 0
     lmse_pos = lmse[pos_mask]
@@ -920,8 +1043,19 @@ def main():
     inf_lstm = compute_inference_latency(p["lstm_latencies"])
     inf_gru  = compute_inference_latency(p["gru_latencies"])
 
-    lstm_fpr, lstm_tpr, lstm_auc = compute_roc_auc(val_lstm_mse, lmse_pos)
-    gru_fpr,  gru_tpr,  gru_auc  = compute_roc_auc(val_gru_mse,  gmse_pos)
+    # Two ROC curves are defensible and they are NOT the same number; the
+    # negative population differs, so each must say which set it used.
+    #   attack-benign negatives -> the curve whose x-axis is FPR(Attack), i.e.
+    #     the one consistent with the reported operating point. This is the
+    #     primary AUC, and matches eval_opsi_b.py / evaluate_scoring_comparison.py.
+    #   validation negatives -> a cross-session curve whose x-axis is FPR(Val).
+    neg_mask = lbls == 0
+    lstm_fpr, lstm_tpr, lstm_auc = compute_roc_auc(lmse[neg_mask], lmse_pos)
+    gru_fpr,  gru_tpr,  gru_auc  = compute_roc_auc(gmse[neg_mask], gmse_pos)
+    _, _, lstm_auc_valneg = compute_roc_auc(val_lstm_mse, lmse_pos)
+    _, _, gru_auc_valneg  = compute_roc_auc(val_gru_mse,  gmse_pos)
+    print(f"    AUC (neg=attack-benign) — lstm:{lstm_auc:.4f}  gru:{gru_auc:.4f}")
+    print(f"    AUC (neg=validation)    — lstm:{lstm_auc_valneg:.4f}  gru:{gru_auc_valneg:.4f}")
 
     def _entry(fires, fpr_val, inf_lat=None, auc_val=None):
         return build_result_entry(
@@ -949,10 +1083,22 @@ def main():
         "val_csv":    args.val,
         "attack_csv": args.attack,
         "seq_len":    SEQ_LEN,
+        "scoring": args.scoring,
+        # AUC depends on which windows are the negatives; both are recorded so
+        # the reported figure can never be confused with the other curve.
+        "auc": {
+            "negatives": "attack_file_benign_windows",
+            "lstm": lstm_auc,
+            "gru": gru_auc,
+            "alt_negatives_validation": {
+                "lstm": lstm_auc_valneg,
+                "gru": gru_auc_valneg,
+            },
+        },
         "thresholds": {
             "lstm":   thresh_lstm,
             "gru":    thresh_gru,
-            "source": "validation_p99",
+            "source": threshold_source,
         },
         "window_counts": {
             "validation":       n_val,
@@ -970,14 +1116,23 @@ def main():
     print_summary_table(results)
 
     if args.save_figures:
+        import re
+        def get_version(path):
+            m = re.search(r'v\d+', os.path.basename(path))
+            return m.group(0) if m else "v4"
+        # Full display name used in figure titles; default preserves the
+        # historical "LSTM-UE v5" form.
+        lstm_ver = args.lstm_label or f"LSTM-UE {get_version(args.lstm_model)}"
+        gru_ver = args.gru_label or f"GRU-UE {get_version(args.gru_model)}"
+
         roc_data = {
             "lstm": (lstm_fpr, lstm_tpr, lstm_auc),
             "gru":  (gru_fpr,  gru_tpr,  gru_auc),
         }
         plot_confusion_matrices(results, args.output)
-        plot_per_class(results, args.output)
+        plot_per_class(results, args.output, lstm_ver=lstm_ver, gru_ver=gru_ver)
         plot_latency(results, args.output)
-        plot_roc(roc_data, results, args.output)
+        plot_roc(roc_data, results, args.output, lstm_ver=lstm_ver, gru_ver=gru_ver)
         plot_reconstruction_error_dist(
             val_lstm_mse = val_lstm_mse,
             lmse_pos     = lmse_pos,
@@ -988,6 +1143,8 @@ def main():
             output_dir   = args.output,
             train_lstm_mse = train_lstm_mse,
             train_gru_mse  = train_gru_mse,
+            lstm_ver     = lstm_ver,
+            gru_ver      = gru_ver,
         )
 
 

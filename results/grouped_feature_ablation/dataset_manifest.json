@@ -1,0 +1,236 @@
+{
+  "experiment": "grouped_feature_ablation",
+  "scope": {
+    "part_1_ablation": {
+      "seed": 42,
+      "rationale": "seed 42 ditetapkan sebelum eksperimen, merupakan seed default pipeline, dan checkpoint-nya adalah model yang diterapkan pada xApp",
+      "cells_expected": 12,
+      "cells_completed": 12,
+      "averaging": "tidak dilakukan — hanya satu seed"
+    },
+    "part_2_seed_sensitivity": {
+      "config": "full_19",
+      "seeds_completed": [
+        42,
+        43,
+        44,
+        45,
+        46
+      ],
+      "role": "lampiran; tidak masuk perhitungan kontribusi ablasi"
+    }
+  },
+  "architectures": {
+    "lstm": "LSTM-Autoencoder, unidirectional",
+    "gru": "GRU-Autoencoder, bidirectional (BiGRU)"
+  },
+  "feature_configs": {
+    "full_19": {
+      "n_kept": 19,
+      "kept": [
+        "prb_usage_dl_ratio",
+        "prb_usage_ul_ratio",
+        "thp_dl_kbps",
+        "thp_ul_kbps",
+        "prb_direction",
+        "prb_total",
+        "prb_ul_delta",
+        "ul_efficiency",
+        "prb_ul_roll_mean",
+        "prb_ul_roll_std",
+        "ul_persistence",
+        "thp_total_kbps",
+        "thp_ul_delta",
+        "thp_dl_delta",
+        "traffic_direction",
+        "prb_ul_burst_index",
+        "prb_dl_burst_index",
+        "thp_ul_burst_index",
+        "thp_dl_burst_index"
+      ],
+      "dropped": []
+    },
+    "no_prb_family": {
+      "n_kept": 8,
+      "kept": [
+        "thp_dl_kbps",
+        "thp_ul_kbps",
+        "thp_total_kbps",
+        "thp_ul_delta",
+        "thp_dl_delta",
+        "traffic_direction",
+        "thp_ul_burst_index",
+        "thp_dl_burst_index"
+      ],
+      "dropped": [
+        "prb_usage_dl_ratio",
+        "prb_usage_ul_ratio",
+        "prb_direction",
+        "prb_total",
+        "prb_ul_delta",
+        "prb_ul_roll_mean",
+        "prb_ul_roll_std",
+        "ul_persistence",
+        "prb_ul_burst_index",
+        "prb_dl_burst_index",
+        "ul_efficiency"
+      ]
+    },
+    "no_throughput_family": {
+      "n_kept": 10,
+      "kept": [
+        "prb_usage_dl_ratio",
+        "prb_usage_ul_ratio",
+        "prb_direction",
+        "prb_total",
+        "prb_ul_delta",
+        "prb_ul_roll_mean",
+        "prb_ul_roll_std",
+        "ul_persistence",
+        "prb_ul_burst_index",
+        "prb_dl_burst_index"
+      ],
+      "dropped": [
+        "thp_dl_kbps",
+        "thp_ul_kbps",
+        "thp_total_kbps",
+        "thp_ul_delta",
+        "thp_dl_delta",
+        "traffic_direction",
+        "thp_ul_burst_index",
+        "thp_dl_burst_index",
+        "ul_efficiency"
+      ]
+    },
+    "no_temporal_family": {
+      "n_kept": 9,
+      "kept": [
+        "prb_usage_dl_ratio",
+        "prb_usage_ul_ratio",
+        "thp_dl_kbps",
+        "thp_ul_kbps",
+        "prb_direction",
+        "prb_total",
+        "ul_efficiency",
+        "thp_total_kbps",
+        "traffic_direction"
+      ],
+      "dropped": [
+        "prb_ul_delta",
+        "prb_ul_roll_mean",
+        "prb_ul_roll_std",
+        "ul_persistence",
+        "thp_ul_delta",
+        "thp_dl_delta",
+        "prb_ul_burst_index",
+        "prb_dl_burst_index",
+        "thp_ul_burst_index",
+        "thp_dl_burst_index"
+      ]
+    },
+    "no_burst": {
+      "n_kept": 15,
+      "kept": [
+        "prb_usage_dl_ratio",
+        "prb_usage_ul_ratio",
+        "thp_dl_kbps",
+        "thp_ul_kbps",
+        "prb_direction",
+        "prb_total",
+        "prb_ul_delta",
+        "ul_efficiency",
+        "prb_ul_roll_mean",
+        "prb_ul_roll_std",
+        "ul_persistence",
+        "thp_total_kbps",
+        "thp_ul_delta",
+        "thp_dl_delta",
+        "traffic_direction"
+      ],
+      "dropped": [
+        "prb_ul_burst_index",
+        "prb_dl_burst_index",
+        "thp_ul_burst_index",
+        "thp_dl_burst_index"
+      ]
+    },
+    "base_only_4": {
+      "n_kept": 4,
+      "kept": [
+        "prb_usage_dl_ratio",
+        "prb_usage_ul_ratio",
+        "thp_dl_kbps",
+        "thp_ul_kbps"
+      ],
+      "dropped": [
+        "prb_direction",
+        "prb_total",
+        "prb_ul_delta",
+        "ul_efficiency",
+        "prb_ul_roll_mean",
+        "prb_ul_roll_std",
+        "ul_persistence",
+        "thp_total_kbps",
+        "thp_ul_delta",
+        "thp_dl_delta",
+        "traffic_direction",
+        "prb_ul_burst_index",
+        "prb_dl_burst_index",
+        "thp_ul_burst_index",
+        "thp_dl_burst_index"
+      ]
+    }
+  },
+  "feature_schema": [
+    "prb_usage_dl_ratio",
+    "prb_usage_ul_ratio",
+    "thp_dl_kbps",
+    "thp_ul_kbps",
+    "prb_direction",
+    "prb_total",
+    "prb_ul_delta",
+    "ul_efficiency",
+    "prb_ul_roll_mean",
+    "prb_ul_roll_std",
+    "ul_persistence",
+    "thp_total_kbps",
+    "thp_ul_delta",
+    "thp_dl_delta",
+    "traffic_direction",
+    "prb_ul_burst_index",
+    "prb_dl_burst_index",
+    "thp_ul_burst_index",
+    "thp_dl_burst_index"
+  ],
+  "cells_failed": 0,
+  "protocol": {
+    "seq_len": 30,
+    "loss_weights": "uniform",
+    "scoring": "benign_calibrated, diturunkan ulang per konfigurasi",
+    "threshold": "dikalibrasi ulang hanya pada validasi benign, Hybrid FPR(Val) <= 5%",
+    "rule_branch": "TIDAK diablasi — selalu dievaluasi pada 19 fitur penuh",
+    "primary_result": "ml_only",
+    "secondary_result": "hybrid",
+    "test_set_use": "dibuka hanya setelah model dan ambang dibekukan"
+  },
+  "datasets": {
+    "training": {
+      "path": "csv/dataset_training_ue_juni.csv",
+      "rows": 4201,
+      "bytes": 677339,
+      "sha256_16": "eec48ae7687c04e7"
+    },
+    "validation": {
+      "path": "csv/dataset_validation_ue_juni.csv",
+      "rows": 1801,
+      "bytes": 290150,
+      "sha256_16": "f99702c10ba4276c"
+    },
+    "attack": {
+      "path": "csv/dataset_attack_ue_juni.csv",
+      "rows": 8133,
+      "bytes": 1303890,
+      "sha256_16": "2792c3c133a94f4c"
+    }
+  }
+}

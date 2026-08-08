@@ -1945,9 +1945,10 @@ static void sm_cb_kpm(sm_ag_if_rd_t const* rd, global_e2_node_id_t const* e2_nod
                   alert_log_ue(rnti, rule, mse, g_ue_threshold, alert, ids_now_ms);
                   /* Per-UE alert → request E2SM-RC throttle; update last-alert timestamp
                    * so cell-level restore path does not fire while attack is ongoing. */
-                  g_throttle_target_ue_id = rnti;
-                  if (!g_throttle_active)
+                  if (!g_throttle_active) {
+                      g_throttle_target_ue_id = rnti;
                       g_pending_throttle = 1;
+                  }
               }
           }
       }
@@ -2722,9 +2723,9 @@ int main(int argc, char *argv[])
     if (g_pending_throttle == 1 && !g_throttle_active
         && (now_ms - g_throttle_last_ms > THROTTLE_COOLDOWN_MS)) {
       ids_detection_state_t det = ids_get_detection_state();
-      printf("[DETECT] CRITICAL — sending BLOCK to mitigator (max=0%%) target_ue_id=%u\n", g_throttle_target_ue_id);
+      printf("[DETECT] CRITICAL — sending BLOCK to mitigator (max=5%%) target_ue_id=%u\n", g_throttle_target_ue_id);
       fflush(stdout);
-      ipc_send_mitigate("THROTTLE", 0,
+      ipc_send_mitigate("THROTTLE", 5,
                         alert_type_to_str(det.alert_type),
                         g_last_anomaly_score,
                         "stage2_persistence_confirmed",

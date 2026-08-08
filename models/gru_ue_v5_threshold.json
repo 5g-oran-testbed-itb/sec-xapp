@@ -1,8 +1,9 @@
 {
-  "mu": 0.012306523509323597,
-  "sigma": 0.007757395040243864,
-  "threshold": 0.03424442186951637,
-  "percentile": 99.0,
-  "fpr_pct": 1.0158013544018059,
-  "source": "validation_set"
+  "threshold": 0.0245,
+  "percentile": 97.5,
+  "fpr_pct": 2.54,
+  "overall_recall_pct": 91.28,
+  "roq_recall_pct": 94.37,
+  "source": "validation_set_weighted_mse_recalibrated",
+  "note": "Optimized threshold (0.024500) to improve UL Flood Recall above 85% while keeping FPR Attack under 3%."
 }

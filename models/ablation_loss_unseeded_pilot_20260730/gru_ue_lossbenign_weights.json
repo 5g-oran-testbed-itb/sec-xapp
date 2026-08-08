@@ -1,0 +1,21 @@
+{
+  "prb_usage_dl_ratio": 2965.087158203125,
+  "prb_usage_ul_ratio": 4163.9765625,
+  "thp_dl_kbps": 3118.052490234375,
+  "thp_ul_kbps": 21204.580078125,
+  "prb_direction": 30.205989837646484,
+  "prb_total": 645.7100830078125,
+  "prb_ul_delta": 10294.705078125,
+  "ul_efficiency": 82.69596099853516,
+  "prb_ul_roll_mean": 14779.8505859375,
+  "prb_ul_roll_std": 2783.052978515625,
+  "ul_persistence": 196.9530792236328,
+  "thp_total_kbps": 2120.4580078125,
+  "thp_ul_delta": 21204.580078125,
+  "thp_dl_delta": 4568.20556640625,
+  "traffic_direction": 17.104097366333008,
+  "prb_ul_burst_index": 60.41048049926758,
+  "prb_dl_burst_index": 80.79618072509766,
+  "thp_ul_burst_index": 73.2801284790039,
+  "thp_dl_burst_index": 48.87486267089844
+}

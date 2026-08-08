@@ -1,0 +1,9 @@
+{
+  "mode": "Hybrid",
+  "percentile": 97.2,
+  "threshold": 0.024944495409727097,
+  "fpr_pct": 4.909706546275395,
+  "overall_recall_pct": 98.07692307692307,
+  "roq_recall_pct": 98.5254691689008,
+  "source": "recalibrated_gru_v5_p97.2"
+}

@@ -80,6 +80,15 @@ choice and already meets the operating target with substantial margin.
 
 ## Validity boundary
 
+> **Superseded — the threshold leakage path described below is now closed.** The
+> thresholds in this document are calibrated on the attack file and are retained
+> only as the loss-ablation record. The reported operating point comes from
+> [opsi_b_recalibration_results.md](opsi_b_recalibration_results.md), which
+> recalibrates on the benign validation set instead. There, FPR(Attack) is no
+> longer an operating point but an **out-of-sample generalization estimate**
+> (2.41% LSTM / 2.06% GRU, measured), and Precision and F1 no longer inherit the
+> optimism of a threshold fitted on the file used to report them.
+
 Neither training variant uses attack data or attack labels. However, the exact
 operating threshold is selected from the `label==0` windows in the attack-file
 session to enforce the 3% Hybrid FPR ceiling. Thus the training/scoring weights

@@ -1,0 +1,9 @@
+{
+  "threshold": 0.0246039517223835,
+  "percentile": 97.0,
+  "fpr_hybrid_pct": 4.966139954853273,
+  "overall_recall_hybrid_pct": 93.73881932021467,
+  "roq_recall_hybrid_pct": 85.25469168900804,
+  "source": "recalibrated_p97.0_via_calibrate_threshold_gru.py",
+  "note": "Supersedes prior mu+z*sigma threshold 0.032727 (FPR 3.05% but Recall far too low, ~19%). This empirical P97 threshold matches what the pre-fix evaluate_per_ue_v2.py was already computing (source: validation_p99 recompute) for the 2026-07-03 exploratory run — now made explicit and reproducible."
+}

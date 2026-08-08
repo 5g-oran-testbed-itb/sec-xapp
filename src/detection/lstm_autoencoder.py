@@ -49,7 +49,7 @@ class LSTMEncoder(nn.Module):
 
         self.attention = TemporalAttention(hidden_sizes[1] * D)
         self.fc = nn.Linear(hidden_sizes[1] * D, latent_dim)
-        self.dropout = nn.Dropout(p=0.2)
+        self.dropout = nn.Dropout(p=0.1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out, _ = self.lstm1(x)
@@ -85,7 +85,7 @@ class LSTMDecoder(nn.Module):
             hidden_size=output_size,
             batch_first=True
         )
-        self.dropout = nn.Dropout(p=0.2)
+        self.dropout = nn.Dropout(p=0.1)
         
     def forward(self, z: torch.Tensor) -> torch.Tensor:
         # z shape: (batch, latent_dim)
