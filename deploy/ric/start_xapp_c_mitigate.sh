@@ -27,7 +27,7 @@ SESSION="xapp_c"
 RIC_BIN="/home/telmat/flexric/build/examples/ric/nearRT-RIC"
 XAPP_BIN="/home/telmat/flexric/build/examples/xApp/c/monitor/xapp_sec_moni"
 MITIGATE_BIN="/home/telmat/flexric/build/examples/xApp/c/monitor/xapp_sec_mitigate"
-XAPP_CONF="/home/telmat/sec-xapp/my_xapp_kpm.conf"
+XAPP_CONF="/home/telmat/sec-xapp/deploy/ric/my_xapp_kpm.conf"
 XAPP_DIR="/home/telmat/sec-xapp"
 
 RAN_IP="10.91.2.1"
