@@ -2,7 +2,7 @@
 # =============================================================
 # O-RAN Security xApp (C Version) — Startup Script WITH E2SM-RC MITIGATION
 # =============================================================
-# Prerequisite: tmux, sshpass, fuser
+# Prerequisite: tmux, fuser, SSH key authorized on $RAN_USER@$RAN_IP
 # Usage: ./start_xapp_c_mitigate.sh
 #
 # Mitigasi: E2SM-RC PRB Throttle via Near-RT RIC (O-RAN native)
@@ -30,9 +30,10 @@ MITIGATE_BIN="/home/telmat/flexric/build/examples/xApp/c/monitor/xapp_sec_mitiga
 XAPP_CONF="/home/telmat/sec-xapp/deploy/ric/my_xapp_kpm.conf"
 XAPP_DIR="/home/telmat/sec-xapp"
 
-RAN_IP="10.91.2.1"
-RAN_USER="telmat"
-RAN_PASS="123"
+RAN_IP="${RAN_IP:-10.91.2.1}"
+RAN_USER="${RAN_USER:-telmat}"
+# Requires an SSH key already authorized on $RAN_USER@$RAN_IP (ssh-copy-id).
+# No password is read from this script or the environment.
 RAN_GNB_DIR="/home/telmat/TA-Rizqi-Nabiel/O-RAN-Testbed-Automation/Next_Generation_Node_B"
 RAN_GNB_BIN="./srsRAN_Project/build/apps/gnb/gnb"
 RAN_GNB_CONF="configs/cots_n78_copied.yml"
@@ -46,7 +47,7 @@ IDS_MODE_FILE="/tmp/xapp_ids_mode"
 # =============================================================
 cleanup() {
     echo "[cleanup] Killing gNB on RAN node ($RAN_IP)..."
-    sshpass -p "$RAN_PASS" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+    ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
         "$RAN_USER@$RAN_IP" "sudo pkill -9 gnb 2>/dev/null" 2>/dev/null || true
     echo "[cleanup] Done."
 }
@@ -55,7 +56,7 @@ trap cleanup EXIT
 # =============================================================
 # Dependency check
 # =============================================================
-for cmd in tmux sshpass fuser; do
+for cmd in tmux fuser; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "ERROR: '$cmd' tidak ditemukan. Install: sudo apt-get install -y $cmd psmisc"
         exit 1
@@ -98,7 +99,7 @@ tmux send-keys -t "$SESSION:0.0" \
 # Pane 1: srsGNB via SSH (Kanan Atas)
 tmux send-keys -t "$SESSION:0.1" \
     "echo '=== [Pane 1] srsGNB via SSH ===' && sleep 3 && \
-     sshpass -p '$RAN_PASS' ssh '$RAN_USER@$RAN_IP' \
+     ssh '$RAN_USER@$RAN_IP' \
      'cd $RAN_GNB_DIR && sudo pkill -9 gnb 2>/dev/null; sleep 1; \
       sudo stdbuf -oL $RAN_GNB_BIN -c $RAN_GNB_CONF 2>&1 | tee /tmp/gnb.log'" Enter
 
