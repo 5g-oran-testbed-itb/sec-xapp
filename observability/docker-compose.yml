@@ -7,11 +7,11 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./csv:/data/csv:ro
-      - ./results:/data/results:ro
-      - ./models:/data/models:ro
-      - ./security_model.onnx:/data/security_model.onnx:ro
-      - ./security_model.onnx.data:/data/security_model.onnx.data:ro
+      - ../csv:/data/csv:ro
+      - ../results:/data/results:ro
+      - ../models:/data/models:ro
+      - ../security_model.onnx:/data/security_model.onnx:ro
+      - ../security_model.onnx.data:/data/security_model.onnx.data:ro
       - /tmp:/tmp:ro
     environment:
       - CSV_DIR=/data/csv
@@ -61,11 +61,11 @@ services:
     ports:
       - "8050:8050"
     volumes:
-      - ./csv:/data/csv:ro
-      - ./security_model.onnx:/data/security_model.onnx:ro
-      - ./security_model.onnx.data:/data/security_model.onnx.data:ro
-      - ./models/gru_ue_v4.onnx:/data/models/gru_ue_v4.onnx:ro
-      - ./models/lstm_ue_v4.onnx:/data/models/lstm_ue_v4.onnx:ro
+      - ../csv:/data/csv:ro
+      - ../security_model.onnx:/data/security_model.onnx:ro
+      - ../security_model.onnx.data:/data/security_model.onnx.data:ro
+      - ../models/gru_ue_v4.onnx:/data/models/gru_ue_v4.onnx:ro
+      - ../models/lstm_ue_v4.onnx:/data/models/lstm_ue_v4.onnx:ro
     environment:
       - CSV_DIR=/data/csv
       - ONNX_MODEL=/data/security_model.onnx
